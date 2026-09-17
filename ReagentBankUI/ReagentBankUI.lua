@@ -466,6 +466,10 @@ local TRADE_SKILL_CHECK_TIMEOUT = 2.0
 local TOOLTIP_BANK_CHECK_TIMEOUT = 2.0
 local TOOLTIP_BANK_COUNT_CACHE_SECONDS = 60
 local TRADE_SKILL_SHOPPING_LIST_LIMIT = 3
+local PROFESSION_PREFETCH_PAIRS_PER_COMMAND = 15
+local PROFESSION_PREFETCH_SEND_INTERVAL = 0.3
+local PROFESSION_PREFETCH_TIMEOUT = 20.0
+local REAGENT_OVERLAY_ROW_COUNT = 8
 local SHOPPING_LIST_CHAT_ITEM_LIMIT = 12
 local SHOPPING_LIST_IMPORT_TIMEOUT = 10.0
 local AUCTION_SHOPPING_ROW_COUNT = 9
@@ -1584,6 +1588,20 @@ function RB:OnUpdate(elapsed)
 
     self:RunAutoDepositTicker(now)
 
+    if self.professionPrefetchQueue and #self.professionPrefetchQueue > 0 then
+        self:SendNextProfessionPrefetchBatch(now)
+    end
+
+    if self.professionPrefetchDeadline and now >= self.professionPrefetchDeadline then
+        -- Prefetch stalled; drop it so the per-recipe path takes over.
+        self.professionPrefetchDeadline = nil
+        self.professionPrefetchQueue = nil
+        self.professionPrefetchPending = nil
+        self.professionPrefetchOutstanding = 0
+        self.professionPrefetchKey = nil
+        self.professionPrefetchSkillCount = nil
+    end
+
     if self.pendingRefresh and now >= self.pendingRefresh.at then
         local refresh = self.pendingRefresh
         self.pendingRefresh = nil
@@ -1605,7 +1623,7 @@ function RB:OnUpdate(elapsed)
         self:ClearBusy("No server data yet. Press Refresh to try again.", 1.00, 0.82, 0.32)
     end
 
-    if not self.pendingRefresh and not self.busyStartedAt and not self.pendingAutoDepositAt and not self.nextItemInfoRefreshAt and not self.nextAutoDepositTickerAt then
+    if not self.pendingRefresh and not self.busyStartedAt and not self.pendingAutoDepositAt and not self.nextItemInfoRefreshAt and not self.nextAutoDepositTickerAt and not self.professionPrefetchDeadline then
         self:SetScript("OnUpdate", nil)
     end
 end
@@ -1723,7 +1741,17 @@ function RB:ApplyBankCountTransaction(transaction)
             if cachedAmount ~= nil then
                 self:CacheBankItemCount(itemEntry, cachedAmount + (direction * amount))
             end
+
+            self:AdjustProfessionBankCount(itemEntry, direction * amount)
         end
+    end
+
+    -- The per-recipe cache is never invalidated on its own, so a withdraw would keep
+    -- showing pre-withdrawal bank counts until a different recipe was selected.
+    self.tradeSkillBankCountsKey = nil
+
+    if TradeSkillFrame and TradeSkillFrame:IsShown() then
+        self:UpdateTradeSkillControls()
     end
 end
 
@@ -3854,12 +3882,18 @@ function RB:RequestTradeSkillBankCounts(reagents)
 end
 
 function RB:GetTradeSkillCraftability(reagents, repeatCount)
-    local key = self:BuildTradeSkillReagentKey(reagents)
-    local bankCountsReady = key ~= "" and self.tradeSkillBankCountsKey == key
-    local bankCounts = bankCountsReady and self.tradeSkillBankCounts or {}
+    local bankCounts = self:GetProfessionBankCountsFor(reagents)
+    local bankCountsReady = bankCounts ~= nil
+
+    if not bankCountsReady then
+        local key = self:BuildTradeSkillReagentKey(reagents)
+        bankCountsReady = key ~= "" and self.tradeSkillBankCountsKey == key
+        bankCounts = bankCountsReady and self.tradeSkillBankCounts or {}
+    end
 
     local bagCrafts = nil
     local bankCrafts = nil
+    local combinedCrafts = nil
     local missingTypes = 0
 
     repeatCount = self:ClampTradeSkillPrepareCount(repeatCount or 1)
@@ -3881,6 +3915,7 @@ function RB:GetTradeSkillCraftability(reagents, repeatCount)
             local bankCount = tonumber(bankCounts and bankCounts[itemEntry]) or 0
             local fromBags = math.floor(bagCount / requiredPerCraft)
             local fromBank = math.floor(bankCount / requiredPerCraft)
+            local fromCombined = math.floor((bagCount + bankCount) / requiredPerCraft)
 
             if bagCrafts == nil or fromBags < bagCrafts then
                 bagCrafts = fromBags
@@ -3889,6 +3924,10 @@ function RB:GetTradeSkillCraftability(reagents, repeatCount)
             if bankCountsReady then
                 if bankCrafts == nil or fromBank < bankCrafts then
                     bankCrafts = fromBank
+                end
+
+                if combinedCrafts == nil or fromCombined < combinedCrafts then
+                    combinedCrafts = fromCombined
                 end
 
                 if bagCount + bankCount < requiredPerCraft * repeatCount then
@@ -3906,10 +3945,15 @@ function RB:GetTradeSkillCraftability(reagents, repeatCount)
         bankCrafts = 0
     end
 
+    if combinedCrafts == nil then
+        combinedCrafts = bagCrafts
+    end
+
     return {
         bankReady = bankCountsReady,
         bankCrafts = bankCrafts,
         bagCrafts = bagCrafts,
+        combinedCrafts = combinedCrafts,
         missingTypes = missingTypes,
     }
 end
@@ -3927,7 +3971,226 @@ function RB:SetLowStockCraftCount(value)
     return ReagentBankUIDB.lowStockCrafts
 end
 
+function RB:ResetProfessionBankPrefetch()
+    self.professionBankCounts = nil
+    self.professionBankCountsReady = false
+    self.professionPrefetchKey = nil
+    self.professionPrefetchSkillCount = nil
+    self.professionPrefetchQueue = nil
+    self.professionPrefetchPending = nil
+    self.professionPrefetchOutstanding = 0
+    self.professionPrefetchNextSendAt = nil
+    self.professionPrefetchDeadline = nil
+end
+
+function RB:BuildProfessionPrefetchKey()
+    if not GetTradeSkillLine then
+        return ""
+    end
+
+    local skillName = GetTradeSkillLine()
+    if type(skillName) ~= "string" or skillName == "" or skillName == "UNKNOWN" then
+        return ""
+    end
+
+    return skillName
+end
+
+function RB:CollectProfessionReagentEntries()
+    if not GetNumTradeSkills or not GetTradeSkillInfo or not GetTradeSkillNumReagents or not GetTradeSkillReagentItemLink then
+        return nil
+    end
+
+    local numSkills = GetNumTradeSkills() or 0
+    if numSkills <= 0 then
+        return nil
+    end
+
+    local seen = {}
+    local entries = {}
+
+    for skillIndex = 1, numSkills do
+        local _, skillType = GetTradeSkillInfo(skillIndex)
+
+        if skillType ~= "header" then
+            local reagentCount = GetTradeSkillNumReagents(skillIndex) or 0
+
+            for reagentIndex = 1, reagentCount do
+                local link = GetTradeSkillReagentItemLink(skillIndex, reagentIndex)
+                local itemEntry = ParseItemIdFromLink(link)
+
+                if itemEntry and itemEntry > 0 and not seen[itemEntry] then
+                    seen[itemEntry] = true
+                    table.insert(entries, math.floor(itemEntry))
+                end
+            end
+        end
+    end
+
+    return entries, numSkills
+end
+
+function RB:PrefetchProfessionBankCounts(force)
+    local key = self:BuildProfessionPrefetchKey()
+    if key == "" then
+        return
+    end
+
+    if self.professionPrefetchDeadline then
+        return
+    end
+
+    local numSkills = GetNumTradeSkills and (GetNumTradeSkills() or 0) or 0
+
+    if not force and self.professionPrefetchKey == key then
+        local covered = tonumber(self.professionPrefetchSkillCount) or 0
+        if numSkills <= covered then
+            return
+        end
+    end
+
+    local entries, collectedSkillCount = self:CollectProfessionReagentEntries()
+    if not entries or #entries == 0 then
+        return
+    end
+
+    self:ResetProfessionBankPrefetch()
+
+    self.professionPrefetchKey = key
+    self.professionPrefetchSkillCount = collectedSkillCount or numSkills
+    self.professionBankCounts = {}
+    self.professionPrefetchPending = {}
+    self.professionPrefetchQueue = {}
+
+    local batch = {}
+    for _, itemEntry in ipairs(entries) do
+        table.insert(batch, itemEntry)
+
+        if #batch >= PROFESSION_PREFETCH_PAIRS_PER_COMMAND then
+            table.insert(self.professionPrefetchQueue, batch)
+            batch = {}
+        end
+    end
+
+    if #batch > 0 then
+        table.insert(self.professionPrefetchQueue, batch)
+    end
+
+    self.professionPrefetchOutstanding = #self.professionPrefetchQueue
+    self.professionPrefetchNextSendAt = GetTime()
+    self.professionPrefetchDeadline = GetTime() + PROFESSION_PREFETCH_TIMEOUT
+    self:EnsureOnUpdate()
+end
+
+function RB:SendNextProfessionPrefetchBatch(now)
+    local queue = self.professionPrefetchQueue
+    if type(queue) ~= "table" or #queue == 0 then
+        return
+    end
+
+    if self.professionPrefetchNextSendAt and now < self.professionPrefetchNextSendAt then
+        return
+    end
+
+    local batch = table.remove(queue, 1)
+    self.professionPrefetchNextSendAt = now + PROFESSION_PREFETCH_SEND_INTERVAL
+
+    self.tradeSkillCheckRequestId = (tonumber(self.tradeSkillCheckRequestId) or 0) + 1
+    if self.tradeSkillCheckRequestId > 100000000 then
+        self.tradeSkillCheckRequestId = 1
+    end
+
+    local requestId = self.tradeSkillCheckRequestId
+    self.professionPrefetchPending = self.professionPrefetchPending or {}
+    self.professionPrefetchPending[requestId] = true
+
+    -- Built directly rather than through BuildItemAmountCommand, which keeps only its
+    -- first command and would silently drop the rest of the batch. The server ignores
+    -- the amount in a check, so 1 is fine.
+    local command = "check recipe " .. tostring(requestId)
+    for _, itemEntry in ipairs(batch) do
+        command = command .. " " .. tostring(itemEntry) .. " 1"
+    end
+
+    self:SendServerCommand(command)
+end
+
+function RB:HandleProfessionPrefetchResponse(requestId, counts)
+    if type(self.professionPrefetchPending) ~= "table" or not self.professionPrefetchPending[requestId] then
+        return false
+    end
+
+    self.professionPrefetchPending[requestId] = nil
+    self.professionBankCounts = self.professionBankCounts or {}
+
+    for rawEntry, rawAmount in pairs(counts or {}) do
+        local itemEntry = tonumber(rawEntry)
+        if itemEntry and itemEntry > 0 then
+            self.professionBankCounts[math.floor(itemEntry)] = math.max(0, math.floor(tonumber(rawAmount) or 0))
+        end
+    end
+
+    self.professionPrefetchOutstanding = math.max(0, (tonumber(self.professionPrefetchOutstanding) or 0) - 1)
+
+    local queueEmpty = type(self.professionPrefetchQueue) ~= "table" or #self.professionPrefetchQueue == 0
+
+    if self.professionPrefetchOutstanding <= 0 and queueEmpty then
+        self.professionBankCountsReady = true
+        self.professionPrefetchDeadline = nil
+        self:UpdateTradeSkillControls()
+    end
+
+    return true
+end
+
+function RB:GetProfessionBankCountsFor(reagents)
+    if not self.professionBankCountsReady or type(self.professionBankCounts) ~= "table" then
+        return nil
+    end
+
+    local counts = {}
+
+    for _, reagent in ipairs(reagents or {}) do
+        local itemEntry = tonumber(reagent.itemEntry or reagent.entry)
+        if itemEntry and itemEntry > 0 then
+            itemEntry = math.floor(itemEntry)
+            local amount = self.professionBankCounts[itemEntry]
+            if amount == nil then
+                -- Recipe uses a reagent the prefetch never covered, so fall back.
+                return nil
+            end
+            counts[itemEntry] = amount
+        end
+    end
+
+    return counts
+end
+
+function RB:AdjustProfessionBankCount(itemEntry, delta)
+    if type(self.professionBankCounts) ~= "table" then
+        return
+    end
+
+    itemEntry = tonumber(itemEntry)
+    if not itemEntry or itemEntry <= 0 then
+        return
+    end
+
+    itemEntry = math.floor(itemEntry)
+    local current = self.professionBankCounts[itemEntry]
+    if current == nil then
+        return
+    end
+
+    self.professionBankCounts[itemEntry] = math.max(0, current + delta)
+end
+
 function RB:GetTradeSkillBankCounts(reagents)
+    local prefetched = self:GetProfessionBankCountsFor(reagents)
+    if prefetched then
+        return true, prefetched
+    end
+
     local key = self:BuildTradeSkillReagentKey(reagents)
     local ready = key ~= "" and self.tradeSkillBankCountsKey == key
 
@@ -4050,6 +4313,132 @@ function RB:FormatTradeSkillPlanItems(rows, limit)
     return table.concat(parts, ", ")
 end
 
+function RB:HideReagentBankOverlays()
+    if type(self.reagentBankOverlays) ~= "table" then
+        return
+    end
+
+    for _, overlay in pairs(self.reagentBankOverlays) do
+        if overlay then
+            overlay:Hide()
+        end
+    end
+end
+
+function RB:EnsureReagentBankOverlays()
+    -- Blizzard_TradeSkillUI is load-on-demand, so the rows may not exist yet.
+    if not _G.TradeSkillFrame then
+        return false
+    end
+
+    self.reagentBankOverlays = self.reagentBankOverlays or {}
+
+    for index = 1, REAGENT_OVERLAY_ROW_COUNT do
+        if not self.reagentBankOverlays[index] then
+            local row = _G["TradeSkillReagent" .. tostring(index)]
+
+            if row and row.CreateFontString then
+                local overlay = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+                overlay:SetPoint("RIGHT", row, "RIGHT", -2, 0)
+                overlay:SetJustifyH("RIGHT")
+                overlay:Hide()
+                self.reagentBankOverlays[index] = overlay
+            end
+        end
+    end
+
+    return true
+end
+
+function RB:GetReagentBankCountsForOverlay(reagents)
+    local counts = self:GetProfessionBankCountsFor(reagents)
+    if counts then
+        return counts
+    end
+
+    local key = self:BuildTradeSkillReagentKey(reagents)
+    if key ~= "" and self.tradeSkillBankCountsKey == key then
+        return self.tradeSkillBankCounts
+    end
+
+    return nil
+end
+
+function RB:UpdateReagentBankOverlays()
+    if not _G.TradeSkillFrame or not _G.TradeSkillFrame:IsShown() then
+        self:HideReagentBankOverlays()
+        return
+    end
+
+    if not self:EnsureReagentBankOverlays() then
+        return
+    end
+
+    local overlays = self.reagentBankOverlays
+    if type(overlays) ~= "table" then
+        return
+    end
+
+    if not GetTradeSkillSelectionIndex or not GetTradeSkillNumReagents or not GetTradeSkillReagentInfo or not GetTradeSkillReagentItemLink then
+        self:HideReagentBankOverlays()
+        return
+    end
+
+    local index = GetTradeSkillSelectionIndex()
+    if not index or index <= 0 then
+        self:HideReagentBankOverlays()
+        return
+    end
+
+    local reagents = self:GetSelectedTradeSkillReagents()
+    local bankCounts = reagents and self:GetReagentBankCountsForOverlay(reagents) or nil
+
+    if not bankCounts then
+        self:HideReagentBankOverlays()
+        return
+    end
+
+    local reagentCount = GetTradeSkillNumReagents(index) or 0
+
+    for row = 1, REAGENT_OVERLAY_ROW_COUNT do
+        local overlay = overlays[row]
+        local shown = false
+
+        if overlay and row <= reagentCount then
+            local itemEntry = ParseItemIdFromLink(GetTradeSkillReagentItemLink(index, row))
+
+            if itemEntry and itemEntry > 0 then
+                local bankAmount = tonumber(bankCounts[math.floor(itemEntry)]) or 0
+
+                if bankAmount > 0 then
+                    local _, _, requiredCount = GetTradeSkillReagentInfo(index, row)
+                    requiredCount = tonumber(requiredCount) or 0
+
+                    local bagCount = 0
+                    if GetItemCount then
+                        bagCount = tonumber(GetItemCount(itemEntry, false)) or 0
+                    end
+
+                    overlay:SetText("+" .. FormatCount(bankAmount) .. " bank")
+
+                    if requiredCount <= 0 or bagCount + bankAmount >= requiredCount then
+                        overlay:SetTextColor(0.38, 0.86, 0.38)
+                    else
+                        overlay:SetTextColor(1.00, 0.55, 0.25)
+                    end
+
+                    overlay:Show()
+                    shown = true
+                end
+            end
+        end
+
+        if overlay and not shown then
+            overlay:Hide()
+        end
+    end
+end
+
 function RB:UpdateTradeSkillStatsText()
     if not self.tradeSkillStatsText then
         return
@@ -4071,6 +4460,23 @@ function RB:UpdateTradeSkillStatsText()
     repeatCount = self:ClampTradeSkillPrepareCount(repeatCount or 1)
     local plan = self:BuildTradeSkillShoppingPlan(reagents, repeatCount, self:GetLowStockCraftCount())
     local lines = {}
+
+    local craftability = self:GetTradeSkillCraftability(reagents, repeatCount)
+    if craftability then
+        local bags = tonumber(craftability.bagCrafts) or 0
+
+        if craftability.bankReady then
+            local combined = tonumber(craftability.combinedCrafts) or bags
+
+            if combined > bags then
+                table.insert(lines, "Craftable: " .. tostring(combined) .. " with bank (" .. tostring(bags) .. " from bags)")
+            else
+                table.insert(lines, "Craftable: " .. tostring(combined) .. " from bags")
+            end
+        else
+            table.insert(lines, "Craftable: " .. tostring(bags) .. " from bags (checking bank)")
+        end
+    end
 
     if not plan.bankReady then
         if #plan.needs > 0 then
@@ -5204,6 +5610,7 @@ function RB:UpdateTradeSkillControls()
     end
 
     self:UpdateTradeSkillStatsText()
+    self:UpdateReagentBankOverlays()
 end
 
 function RB:CreateTradeSkillControls()
@@ -6964,6 +7371,8 @@ function RB:HandleProtocol(message)
 
             if check then
                 local requestId = tonumber(parts[4]) or check.requestId or 0
+
+                self:HandleProfessionPrefetchResponse(requestId, check.counts)
                 local pending = self.pendingTradeSkillChecks and self.pendingTradeSkillChecks[requestId] or nil
 
                 if pending then
@@ -7438,11 +7847,15 @@ RB:SetScript("OnEvent", function(self, event, ...)
         self:CreateTradeSkillControls()
     elseif event == "TRADE_SKILL_SHOW" then
         self:CreateTradeSkillControls()
+        self:PrefetchProfessionBankCounts()
         self:UpdateTradeSkillControls()
     elseif event == "TRADE_SKILL_UPDATE" then
         self:CreateTradeSkillControls()
+        self:PrefetchProfessionBankCounts()
         self:UpdateTradeSkillControls()
     elseif event == "TRADE_SKILL_CLOSE" then
+        self:ResetProfessionBankPrefetch()
+        self:HideReagentBankOverlays()
         self:HandleTradeSkillClosed()
     elseif event == "AUCTION_HOUSE_SHOW" then
         self.auctionShoppingFrameDismissed = false
