@@ -470,6 +470,18 @@ local PROFESSION_PREFETCH_PAIRS_PER_COMMAND = 15
 local PROFESSION_PREFETCH_SEND_INTERVAL = 0.3
 local PROFESSION_PREFETCH_TIMEOUT = 20.0
 local REAGENT_OVERLAY_ROW_COUNT = 8
+local REAGENT_OVERLAY_TEXT_WIDTH = 46
+local REAGENT_OVERLAY_RESERVED_WIDTH = 52
+local REAGENT_NAME_MIN_WIDTH = 90
+local REAGENT_NAME_FIXED_WIDTH_HINT = 150
+local PROFESSION_PANEL_WIDTH = 232
+local PROFESSION_PANEL_PADDING = 12
+local PROFESSION_PANEL_X = -33
+local PROFESSION_PANEL_Y = -12
+local PROFESSION_PANEL_NOTE_TOP = 192
+local PROFESSION_PANEL_MIN_HEIGHT = 320
+local PROFESSION_PANEL_MAX_HEIGHT = 500
+local PROFESSION_PANEL_ITEM_LIMIT = 3
 local SHOPPING_LIST_CHAT_ITEM_LIMIT = 12
 local SHOPPING_LIST_IMPORT_TIMEOUT = 10.0
 local AUCTION_SHOPPING_ROW_COUNT = 9
@@ -482,14 +494,21 @@ local LOW_STOCK_DEFAULT_CRAFTS = 5
 -- Change these to move/resize Deposit All, Withdraw All, and Refresh.
 local ROOT_BUTTON_ROW_X = 18
 local ROOT_BUTTON_ROW_Y = -60
-local ROOT_ACTION_BUTTON_WIDTH = 118
-local ROOT_REFRESH_BUTTON_WIDTH = 96
-local ROOT_SORT_BUTTON_WIDTH = 98
-local ROOT_PREVIEW_TOGGLE_BUTTON_WIDTH = 112
-local ROOT_SHOPPING_BUTTON_WIDTH = 86
+-- One width for every button on the top row so it reads as a toolbar instead
+-- of a ragged line. Six buttons at 110 plus five 8px gaps exactly fill the
+-- 704px between the frame's side margins.
+local ROOT_ACTION_BUTTON_WIDTH = 110
+local ROOT_REFRESH_BUTTON_WIDTH = 110
+local ROOT_SORT_BUTTON_WIDTH = 110
+local ROOT_PREVIEW_TOGGLE_BUTTON_WIDTH = 110
+local ROOT_SHOPPING_BUTTON_WIDTH = 110
 local ROOT_BUTTON_HEIGHT = 24
 local ROOT_BUTTON_GAP = 8
-local ROOT_HELP_TEXT_GAP = 12
+local TOOLBAR_TOP = 55
+local TOOLBAR_HEIGHT = 62
+local LIST_COUNT_COLUMN_WIDTH = 158
+local LIST_COUNT_COLUMN_INSET = 8
+local LIST_COLUMN_SPLIT = LIST_COUNT_COLUMN_WIDTH + LIST_COUNT_COLUMN_INSET
 local UNDO_BUTTON_WIDTH = 128
 
 -- Category/detail navigation button placement.
@@ -502,6 +521,7 @@ local CATEGORY_PAGE_BUTTON_WIDTH = 72
 local CATEGORY_BUTTON_HEIGHT = 24
 local CATEGORY_BUTTON_GAP = 8
 local CATEGORY_PAGE_TEXT_GAP = 10
+local CATEGORY_PAGE_TEXT_WIDTH = 104
 local SHOPPING_RECIPE_BUTTON_WIDTH = 132
 local SHOPPING_PRINT_BUTTON_WIDTH = 96
 local SHOPPING_CLEAR_BUTTON_WIDTH = 96
@@ -727,6 +747,15 @@ local function FormatCount(value)
     end
 
     return tostring(value)
+end
+
+local TEXT_GOOD = "7fdc7f"
+local TEXT_WARN = "ffb04a"
+local TEXT_BAD = "ff6b5e"
+local TEXT_DIM = "97a0ae"
+
+local function ColorText(text, color)
+    return "|cff" .. (color or TEXT_DIM) .. tostring(text or "") .. "|r"
 end
 
 local function GetItemDisplay(itemEntry)
@@ -1203,6 +1232,8 @@ function RB:ApplySkin()
         SetFrameBackdropColors(f.header, SKIN.headerBg, SKIN.windowBorder)
         SetTextureColor(f.headerGlow, SKIN.headerLine, 0.10)
         SetTextureColor(f.headerLine, SKIN.headerLine)
+        SetTextureColor(f.toolbarBg, SKIN.panelBg, 0.42)
+        SetTextureColor(f.toolbarLine, SKIN.headerLine, 0.30)
         SetFontColor(f.title, SKIN.titleText)
         SetFontColor(f.modeText, SKIN.mutedText)
 
@@ -1259,13 +1290,13 @@ function RB:ApplySkin()
         if f.listHeader then
             SetTextureColor(f.listHeader.bg, SKIN.listHeaderBg)
             SetTextureColor(f.listHeader.line, SKIN.headerLine, 0.70)
+            SetTextureColor(f.listHeader.split, SKIN.headerLine, 0.30)
         end
 
         SetFontColor(f.headerName, SKIN.buttonText)
         SetFontColor(f.headerCount, SKIN.buttonText)
         SetFontColor(f.pageText, SKIN.mutedText)
         SetFontColor(f.shoppingPageText, SKIN.mutedText)
-        SetFontColor(f.helpText, SKIN.mutedText)
         SetFontColor(f.status, SKIN.mutedText)
         SetFontColor(f.detailName, SKIN.titleText)
         SetFontColor(f.detailHint, SKIN.mutedText)
@@ -1302,6 +1333,7 @@ function RB:ApplySkin()
                 end
                 SetTextureColor(row.fill, SKIN.rowFill)
                 SetTextureColor(row.hover, SKIN.rowHover)
+                SetTextureColor(row.split, SKIN.headerLine, 0.18)
                 SetFontColor(row.count, SKIN.blueText)
             end
         end
@@ -1332,6 +1364,7 @@ function RB:ApplySkin()
                 end
                 SetTextureColor(row.fill, SKIN.rowFill)
                 SetTextureColor(row.hover, SKIN.rowHover)
+                SetTextureColor(row.split, SKIN.headerLine, 0.18)
                 SetFontColor(row.count, SKIN.blueText)
             end
         end
@@ -1361,6 +1394,8 @@ function RB:ApplySkin()
 
     SetFontColor(self.tradeSkillQuantityLabel, SKIN.buttonText)
     SetFontColor(self.tradeSkillStatsText, SKIN.mutedText)
+
+    self:ApplyProfessionPanelSkin()
 
     if self.colorSettingsFrame then
         local settings = self.colorSettingsFrame
@@ -2724,6 +2759,7 @@ function RB:CreateAuctionShoppingFrame()
     frame.headerName:SetText("Item")
 
     frame.headerCount = frame.header:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    frame.headerCount:SetWidth(82)
     frame.headerCount:SetPoint("RIGHT", -7, 0)
     frame.headerCount:SetJustifyH("RIGHT")
     frame.headerCount:SetText("Need / Bags")
@@ -2762,6 +2798,12 @@ function RB:CreateAuctionShoppingFrame()
             row.count:ClearAllPoints()
             row.count:SetPoint("RIGHT", -7, 0)
         end
+
+        row.split = row:CreateTexture(nil, "ARTWORK")
+        row.split:SetTexture("Interface\\ChatFrame\\ChatFrameBackground")
+        row.split:SetWidth(1)
+        row.split:SetPoint("TOP", row, "TOPRIGHT", -89, -3)
+        row.split:SetPoint("BOTTOM", row, "BOTTOMRIGHT", -89, 3)
 
         if (index % 2) == 0 then
             SetTextureColor(row.bg, SKIN.rowEven)
@@ -4313,15 +4355,44 @@ function RB:FormatTradeSkillPlanItems(rows, limit)
     return table.concat(parts, ", ")
 end
 
+function RB:GetReagentNameFontString(index)
+    return _G["TradeSkillReagent" .. tostring(index) .. "Name"]
+end
+
+-- Blizzard's reagent name font string owns the full width of the row, so an
+-- overlay pinned to the right edge lands on top of longer names. Shrink the
+-- name while the overlay is up and hand the width back when it goes away.
+function RB:SetReagentNameReserved(index, reserved)
+    local nameText = self:GetReagentNameFontString(index)
+    if not nameText or not nameText.SetWidth or not nameText.GetWidth then
+        return
+    end
+
+    local original = self.reagentNameWidths and self.reagentNameWidths[index]
+    if not original or original < REAGENT_NAME_FIXED_WIDTH_HINT then
+        return
+    end
+
+    local target = original
+    if reserved and reserved > 0 then
+        target = math.max(REAGENT_NAME_MIN_WIDTH, original - reserved)
+    end
+
+    if math.abs((tonumber(nameText:GetWidth()) or 0) - target) > 0.5 then
+        nameText:SetWidth(target)
+    end
+end
+
 function RB:HideReagentBankOverlays()
     if type(self.reagentBankOverlays) ~= "table" then
         return
     end
 
-    for _, overlay in pairs(self.reagentBankOverlays) do
+    for index, overlay in pairs(self.reagentBankOverlays) do
         if overlay then
             overlay:Hide()
         end
+        self:SetReagentNameReserved(index, 0)
     end
 end
 
@@ -4332,14 +4403,22 @@ function RB:EnsureReagentBankOverlays()
     end
 
     self.reagentBankOverlays = self.reagentBankOverlays or {}
+    self.reagentNameWidths = self.reagentNameWidths or {}
 
     for index = 1, REAGENT_OVERLAY_ROW_COUNT do
         if not self.reagentBankOverlays[index] then
             local row = _G["TradeSkillReagent" .. tostring(index)]
 
             if row and row.CreateFontString then
-                local overlay = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-                overlay:SetPoint("RIGHT", row, "RIGHT", -2, 0)
+                local nameText = self:GetReagentNameFontString(index)
+                if nameText and nameText.GetWidth then
+                    self.reagentNameWidths[index] = tonumber(nameText:GetWidth()) or 0
+                end
+
+                local overlay = row:CreateFontString(nil, "OVERLAY")
+                overlay:SetFont(STANDARD_TEXT_FONT, 11, "OUTLINE")
+                overlay:SetWidth(REAGENT_OVERLAY_TEXT_WIDTH)
+                overlay:SetPoint("RIGHT", row, "RIGHT", -3, 0)
                 overlay:SetJustifyH("RIGHT")
                 overlay:Hide()
                 self.reagentBankOverlays[index] = overlay
@@ -4419,12 +4498,12 @@ function RB:UpdateReagentBankOverlays()
                         bagCount = tonumber(GetItemCount(itemEntry, false)) or 0
                     end
 
-                    overlay:SetText("+" .. FormatCount(bankAmount) .. " bank")
+                    overlay:SetText("+" .. FormatCount(bankAmount))
 
                     if requiredCount <= 0 or bagCount + bankAmount >= requiredCount then
-                        overlay:SetTextColor(0.38, 0.86, 0.38)
+                        overlay:SetTextColor(0.50, 0.88, 0.50)
                     else
-                        overlay:SetTextColor(1.00, 0.55, 0.25)
+                        overlay:SetTextColor(1.00, 0.69, 0.29)
                     end
 
                     overlay:Show()
@@ -4436,6 +4515,62 @@ function RB:UpdateReagentBankOverlays()
         if overlay and not shown then
             overlay:Hide()
         end
+
+        self:SetReagentNameReserved(row, shown and REAGENT_OVERLAY_RESERVED_WIDTH or 0)
+    end
+end
+
+function RB:UpdateProfessionPanelHeight()
+    local panel = self.tradeSkillPanel
+    if not panel or not self.tradeSkillStatsText then
+        return
+    end
+
+    local textHeight = 0
+    if self.tradeSkillStatsText.GetStringHeight then
+        textHeight = tonumber(self.tradeSkillStatsText:GetStringHeight()) or 0
+    end
+
+    -- GetStringHeight is the only wrap-aware measure available, but it reports a
+    -- single line on some clients. Counting the explicit line breaks gives a
+    -- floor so a long plan never spills past the panel border.
+    local lineCount = 1
+    for _ in string.gmatch(self.tradeSkillStatsText:GetText() or "", "\n") do
+        lineCount = lineCount + 1
+    end
+    textHeight = math.max(textHeight, lineCount * 14)
+
+    local hintHeight = 0
+    if panel.hint and panel.hint.GetStringHeight then
+        hintHeight = tonumber(panel.hint:GetStringHeight()) or 0
+    end
+
+    local noteHeight = 0
+    if panel.craftNote and panel.craftNote.GetStringHeight then
+        noteHeight = tonumber(panel.craftNote:GetStringHeight()) or 0
+    end
+
+    local height = PROFESSION_PANEL_NOTE_TOP + noteHeight + 10 + textHeight + 14 + hintHeight + 12
+    panel:SetHeight(Clamp(height, PROFESSION_PANEL_MIN_HEIGHT, PROFESSION_PANEL_MAX_HEIGHT))
+end
+
+function RB:SetProfessionCraftableStat(value, label, note, r, g, b)
+    local panel = self.tradeSkillPanel
+    if not panel then
+        return
+    end
+
+    if panel.craftValue then
+        panel.craftValue:SetText(tostring(value or "-"))
+        panel.craftValue:SetTextColor(r or 1.00, g or 0.82, b or 0.28)
+    end
+
+    if panel.craftLabel then
+        panel.craftLabel:SetText(label or "")
+    end
+
+    if panel.craftNote then
+        panel.craftNote:SetText(note or "")
     end
 end
 
@@ -4445,61 +4580,87 @@ function RB:UpdateTradeSkillStatsText()
     end
 
     local reagents, errText, recipeName, repeatCount = self:GetSelectedTradeSkillReagents()
+
     if errText then
-        self.tradeSkillStatsText:SetText(errText)
+        self:SetProfessionCraftableStat("-", "", "", 0.62, 0.65, 0.70)
+        self.tradeSkillStatsText:SetText(ColorText(errText, TEXT_DIM))
         self.tradeSkillStatsText:Show()
+        self:UpdateProfessionPanelHeight()
         return
     end
 
     if not reagents or #reagents == 0 then
-        self.tradeSkillStatsText:SetText("No reagent plan needed.")
+        self:SetProfessionCraftableStat("-", "", "", 0.62, 0.65, 0.70)
+        self.tradeSkillStatsText:SetText(ColorText("This recipe has no tracked reagents.", TEXT_DIM))
         self.tradeSkillStatsText:Show()
+        self:UpdateProfessionPanelHeight()
         return
     end
 
     repeatCount = self:ClampTradeSkillPrepareCount(repeatCount or 1)
+
     local plan = self:BuildTradeSkillShoppingPlan(reagents, repeatCount, self:GetLowStockCraftCount())
+    local craftability = self:GetTradeSkillCraftability(reagents, repeatCount)
+    local bags = craftability and tonumber(craftability.bagCrafts) or 0
+
+    if craftability and craftability.bankReady then
+        local combined = tonumber(craftability.combinedCrafts) or bags
+        local note
+
+        if combined > bags then
+            note = "bags cover " .. tostring(bags) .. ", the bank adds " .. tostring(combined - bags) .. "."
+        elseif combined > 0 then
+            note = "all from bags, the bank adds nothing."
+        else
+            note = "bags and bank together are short a reagent."
+        end
+
+        if combined > 0 then
+            self:SetProfessionCraftableStat(combined, "craftable", note, 0.48, 0.92, 0.48)
+        else
+            self:SetProfessionCraftableStat(0, "craftable", note, 1.00, 0.42, 0.37)
+        end
+    else
+        self:SetProfessionCraftableStat(bags, "from bags", "Reading reagent bank stock...", 1.00, 0.82, 0.28)
+    end
+
     local lines = {}
 
-    local craftability = self:GetTradeSkillCraftability(reagents, repeatCount)
-    if craftability then
-        local bags = tonumber(craftability.bagCrafts) or 0
-
-        if craftability.bankReady then
-            local combined = tonumber(craftability.combinedCrafts) or bags
-
-            if combined > bags then
-                table.insert(lines, "Craftable: " .. tostring(combined) .. " with bank (" .. tostring(bags) .. " from bags)")
-            else
-                table.insert(lines, "Craftable: " .. tostring(combined) .. " from bags")
-            end
-        else
-            table.insert(lines, "Craftable: " .. tostring(bags) .. " from bags (checking bank)")
-        end
+    local function AddBlock(heading, body, color)
+        table.insert(lines, ColorText(heading, color) .. "  " .. tostring(body or ""))
     end
+
+    local countText = "x" .. tostring(repeatCount)
 
     if not plan.bankReady then
         if #plan.needs > 0 then
-            table.insert(lines, "Shopping list x" .. tostring(repeatCount) .. ": " .. self:FormatTradeSkillPlanItems(plan.needs, TRADE_SKILL_SHOPPING_LIST_LIMIT) .. " (checking bank)")
+            AddBlock("Short " .. countText,
+                self:FormatTradeSkillPlanItems(plan.needs, PROFESSION_PANEL_ITEM_LIMIT), TEXT_WARN)
         else
-            table.insert(lines, "Ready x" .. tostring(repeatCount) .. " from bags. Checking bank stock...")
+            AddBlock("Ready " .. countText, "bags already cover this craft.", TEXT_GOOD)
         end
     elseif #plan.withdraw > 0 then
-        table.insert(lines, "Withdraw x" .. tostring(repeatCount) .. ": " .. self:FormatTradeSkillPlanItems(plan.withdraw, TRADE_SKILL_SHOPPING_LIST_LIMIT))
+        AddBlock("Withdraw " .. countText,
+            self:FormatTradeSkillPlanItems(plan.withdraw, PROFESSION_PANEL_ITEM_LIMIT), TEXT_GOOD)
     elseif #plan.needs == 0 then
-        table.insert(lines, "Ready x" .. tostring(repeatCount) .. " from bags.")
+        AddBlock("Ready " .. countText, "bags already cover this craft.", TEXT_GOOD)
     else
-        table.insert(lines, "Bank cannot cover bag needs for x" .. tostring(repeatCount) .. ".")
+        AddBlock("Short " .. countText, "the reagent bank cannot cover it.", TEXT_BAD)
     end
 
     if plan.bankReady and #plan.missing > 0 then
-        table.insert(lines, "Missing: " .. self:FormatTradeSkillPlanItems(plan.missing, TRADE_SKILL_SHOPPING_LIST_LIMIT))
-    elseif plan.bankReady and #plan.lowStock > 0 then
-        table.insert(lines, "Low stock < x" .. tostring(plan.lowStockCrafts) .. ": " .. self:FormatTradeSkillPlanItems(plan.lowStock, TRADE_SKILL_SHOPPING_LIST_LIMIT))
+        AddBlock("Buy",
+            self:FormatTradeSkillPlanItems(plan.missing, PROFESSION_PANEL_ITEM_LIMIT), TEXT_BAD)
+    end
+
+    if plan.bankReady and #plan.lowStock > 0 then
+        AddBlock("Low under x" .. tostring(plan.lowStockCrafts),
+            self:FormatTradeSkillPlanItems(plan.lowStock, PROFESSION_PANEL_ITEM_LIMIT), TEXT_WARN)
     end
 
     self.tradeSkillStatsText:SetText(table.concat(lines, "\n"))
     self.tradeSkillStatsText:Show()
+    self:UpdateProfessionPanelHeight()
 end
 
 function RB:PrintTradeSkillShoppingList()
@@ -5614,7 +5775,7 @@ function RB:UpdateTradeSkillControls()
 end
 
 function RB:CreateTradeSkillControls()
-    if self.tradeSkillButton then
+    if self.tradeSkillPanel then
         self:UpdateTradeSkillControls()
         return
     end
@@ -5624,65 +5785,61 @@ function RB:CreateTradeSkillControls()
         return
     end
 
-    local button = self:CreateButton(parent, 132, 22, "Withdraw Needed")
-    button:SetFrameLevel((parent:GetFrameLevel() or 1) + 20)
+    -- Everything lives in one bordered sidebar docked to the profession window.
+    -- The controls used to chain off TradeSkillCreateButton, which pushed them
+    -- past the frame edge and left the summary text a column too narrow to read.
+    local panel = CreateFrame("Frame", "ReagentBankUIProfessionPanel", parent)
+    panel:SetWidth(PROFESSION_PANEL_WIDTH)
+    panel:SetHeight(PROFESSION_PANEL_MIN_HEIGHT)
+    panel:SetPoint("TOPLEFT", parent, "TOPRIGHT", PROFESSION_PANEL_X, PROFESSION_PANEL_Y)
+    panel:SetFrameLevel((parent:GetFrameLevel() or 1) + 5)
+    panel:EnableMouse(true)
+    self:MakeBackdrop(panel, 0.96)
+    self.tradeSkillPanel = panel
 
-    local createButton = _G.TradeSkillCreateButton
-    if createButton then
-        button:SetPoint("LEFT", createButton, "RIGHT", 8, 0)
-    else
-        button:SetPoint("BOTTOMLEFT", parent, "BOTTOMLEFT", 80, 40)
-    end
+    local inset = PROFESSION_PANEL_PADDING
+    local contentWidth = PROFESSION_PANEL_WIDTH - (inset * 2)
 
-    button:SetScript("OnClick", function()
-        RB:WithdrawNeededForSelectedRecipe()
-    end)
-    button:SetScript("OnEnter", function(selfButton)
-        GameTooltip:SetOwner(selfButton, "ANCHOR_RIGHT")
-        GameTooltip:SetText("Reagent Bank", 1, 0.82, 0)
-        GameTooltip:AddLine(selfButton.tooltipText or "Withdraw missing reagents for the selected recipe.", 1, 1, 1, true)
-        GameTooltip:AddLine("Set the count box beside this button to prepare multiple crafts in one click.", 0.82, 0.82, 0.82, true)
-        GameTooltip:Show()
-    end)
-    button:SetScript("OnLeave", HideTooltip)
+    panel.title = panel:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    panel.title:SetPoint("TOPLEFT", inset, -12)
+    panel.title:SetJustifyH("LEFT")
+    panel.title:SetText("Reagent Bank")
 
-    self.tradeSkillButton = button
+    panel.titleLine = panel:CreateTexture(nil, "ARTWORK")
+    panel.titleLine:SetTexture("Interface\\ChatFrame\\ChatFrameBackground")
+    panel.titleLine:SetPoint("TOPLEFT", inset, -31)
+    panel.titleLine:SetPoint("TOPRIGHT", -inset, -31)
+    panel.titleLine:SetHeight(1)
 
-    local shoppingButton = self:CreateButton(parent, 132, 22, "Add to AH List")
-    shoppingButton:SetFrameLevel((parent:GetFrameLevel() or 1) + 20)
-    shoppingButton:SetPoint("TOPLEFT", button, "BOTTOMLEFT", 0, -4)
-    shoppingButton:SetScript("OnClick", function()
-        RB:NormalizeTradeSkillQuantityBox(false)
-        RB:ImportSelectedRecipeToShoppingList()
-    end)
-    shoppingButton:SetScript("OnEnter", function(selfButton)
-        GameTooltip:SetOwner(selfButton, "ANCHOR_RIGHT")
-        GameTooltip:SetText("AH Shopping List", 1, 0.82, 0)
-        GameTooltip:AddLine(selfButton.tooltipText or "Add selected recipe reagents that still need to be bought.", 1, 1, 1, true)
-        GameTooltip:Show()
-    end)
-    shoppingButton:SetScript("OnLeave", HideTooltip)
-
-    self.tradeSkillShoppingButton = shoppingButton
-
-    local quantityLabel = parent:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-    quantityLabel:SetPoint("LEFT", button, "RIGHT", 8, 0)
-    quantityLabel:SetText("x")
-    quantityLabel:SetTextColor(1.00, 0.86, 0.46)
+    local quantityLabel = panel:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    quantityLabel:SetPoint("LEFT", panel, "TOPLEFT", inset, -52)
+    quantityLabel:SetJustifyH("LEFT")
+    quantityLabel:SetText("Crafts")
     self.tradeSkillQuantityLabel = quantityLabel
 
-    local quantityBox = CreateFrame("EditBox", "ReagentBankUIPrepareCountBox", parent)
-    quantityBox:SetWidth(42)
+    local plusButton = self:CreateButton(panel, 22, 22, "+")
+    plusButton:SetPoint("TOPRIGHT", -inset, -41)
+    plusButton:SetScript("OnClick", function()
+        RB:SetTradeSkillPrepareCount(RB:GetTradeSkillRepeatCount() + 1, true)
+    end)
+    plusButton:SetScript("OnEnter", function(selfButton)
+        GameTooltip:SetOwner(selfButton, "ANCHOR_RIGHT")
+        GameTooltip:SetText("Increase prepare count", 1, 0.82, 0)
+        GameTooltip:Show()
+    end)
+    plusButton:SetScript("OnLeave", HideTooltip)
+    self.tradeSkillPlusButton = plusButton
+
+    local quantityBox = CreateFrame("EditBox", "ReagentBankUIPrepareCountBox", panel)
+    quantityBox:SetWidth(48)
     quantityBox:SetHeight(22)
     quantityBox:SetAutoFocus(false)
     quantityBox:SetNumeric(true)
+    quantityBox:SetJustifyH("CENTER")
     quantityBox:SetFontObject(ChatFontNormal)
-    quantityBox:SetTextInsets(6, 6, 0, 0)
-    quantityBox:SetBackdrop(GetButtonBackdrop())
-    quantityBox:SetBackdropColor(SKIN.inputBg[1], SKIN.inputBg[2], SKIN.inputBg[3], SKIN.inputBg[4])
-    quantityBox:SetBackdropBorderColor(SKIN.buttonBorder[1], SKIN.buttonBorder[2], SKIN.buttonBorder[3], SKIN.buttonBorder[4])
-    quantityBox:SetTextColor(SKIN.inputText[1], SKIN.inputText[2], SKIN.inputText[3], SKIN.inputText[4] or 1)
-    quantityBox:SetPoint("LEFT", quantityLabel, "RIGHT", 4, 0)
+    quantityBox:SetTextInsets(4, 4, 0, 0)
+    quantityBox:SetPoint("RIGHT", plusButton, "LEFT", -4, 0)
+    self:StyleEditBox(quantityBox)
     quantityBox:SetScript("OnEscapePressed", function(selfBox)
         RB:NormalizeTradeSkillQuantityBox(false)
         selfBox:ClearFocus()
@@ -5715,12 +5872,122 @@ function RB:CreateTradeSkillControls()
         GameTooltip:Show()
     end)
     quantityBox:SetScript("OnLeave", HideTooltip)
-
     self.tradeSkillQuantityBox = quantityBox
+
+    local minusButton = self:CreateButton(panel, 22, 22, "-")
+    minusButton:SetPoint("RIGHT", quantityBox, "LEFT", -4, 0)
+    minusButton:SetScript("OnClick", function()
+        RB:SetTradeSkillPrepareCount(RB:GetTradeSkillRepeatCount() - 1, true)
+    end)
+    minusButton:SetScript("OnEnter", function(selfButton)
+        GameTooltip:SetOwner(selfButton, "ANCHOR_RIGHT")
+        GameTooltip:SetText("Decrease prepare count", 1, 0.82, 0)
+        GameTooltip:Show()
+    end)
+    minusButton:SetScript("OnLeave", HideTooltip)
+    self.tradeSkillMinusButton = minusButton
 
     ReagentBankUIDB = ReagentBankUIDB or {}
     local initialCount = tonumber(ReagentBankUIDB.tradeSkillPrepareCount) or self:GetNativeTradeSkillRepeatCount() or 1
     self:SetTradeSkillPrepareCount(initialCount, false)
+
+    local button = self:CreateButton(panel, contentWidth, 24, "Withdraw Needed")
+    button:SetPoint("TOPLEFT", inset, -71)
+    button:SetScript("OnClick", function()
+        RB:WithdrawNeededForSelectedRecipe()
+    end)
+    button:SetScript("OnEnter", function(selfButton)
+        GameTooltip:SetOwner(selfButton, "ANCHOR_RIGHT")
+        GameTooltip:SetText("Reagent Bank", 1, 0.82, 0)
+        GameTooltip:AddLine(selfButton.tooltipText or "Withdraw missing reagents for the selected recipe.", 1, 1, 1, true)
+        GameTooltip:AddLine("Set the Crafts box above to prepare multiple crafts in one click.", 0.82, 0.82, 0.82, true)
+        GameTooltip:Show()
+    end)
+    button:SetScript("OnLeave", HideTooltip)
+    self.tradeSkillButton = button
+
+    local shoppingButton = self:CreateButton(panel, contentWidth, 24, "Add to AH List")
+    shoppingButton:SetPoint("TOPLEFT", button, "BOTTOMLEFT", 0, -6)
+    shoppingButton:SetScript("OnClick", function()
+        RB:NormalizeTradeSkillQuantityBox(false)
+        RB:ImportSelectedRecipeToShoppingList()
+    end)
+    shoppingButton:SetScript("OnEnter", function(selfButton)
+        GameTooltip:SetOwner(selfButton, "ANCHOR_RIGHT")
+        GameTooltip:SetText("AH Shopping List", 1, 0.82, 0)
+        GameTooltip:AddLine(selfButton.tooltipText or "Add selected recipe reagents that still need to be bought.", 1, 1, 1, true)
+        GameTooltip:Show()
+    end)
+    shoppingButton:SetScript("OnLeave", HideTooltip)
+    self.tradeSkillShoppingButton = shoppingButton
+
+    local check = CreateFrame("CheckButton", "ReagentBankUIAutoDepositLeftoversCheck", panel, "UICheckButtonTemplate")
+    check:SetWidth(22)
+    check:SetHeight(22)
+    check:SetPoint("TOPLEFT", shoppingButton, "BOTTOMLEFT", -2, -6)
+    check:SetScript("OnClick", function(selfCheck)
+        ReagentBankUIDB = ReagentBankUIDB or {}
+        ReagentBankUIDB.autoDepositLeftovers = selfCheck:GetChecked() and true or false
+        if not ReagentBankUIDB.autoDepositLeftovers then
+            RB.pendingAutoDepositLeftovers = nil
+            RB.pendingAutoDepositAt = nil
+        end
+        RB:UpdateTradeSkillControls()
+    end)
+    check:SetScript("OnEnter", function(selfCheck)
+        GameTooltip:SetOwner(selfCheck, "ANCHOR_RIGHT")
+        GameTooltip:SetText("Auto-deposit leftovers", 1, 0.82, 0)
+        GameTooltip:AddLine("When you close the profession window, deposit prepared reagent leftovers back into the reagent bank. It preserves the bag counts you had before Withdraw Needed.", 1, 1, 1, true)
+        GameTooltip:Show()
+    end)
+    check:SetScript("OnLeave", HideTooltip)
+    self.tradeSkillAutoDepositCheck = check
+
+    panel.checkText = _G[check:GetName() .. "Text"]
+    if panel.checkText then
+        if _G.GameFontHighlightSmall then
+            panel.checkText:SetFontObject(_G.GameFontHighlightSmall)
+        end
+        panel.checkText:SetText("Auto-deposit leftovers")
+    end
+
+    panel.statsLine = panel:CreateTexture(nil, "ARTWORK")
+    panel.statsLine:SetTexture("Interface\\ChatFrame\\ChatFrameBackground")
+    panel.statsLine:SetPoint("TOPLEFT", inset, -158)
+    panel.statsLine:SetPoint("TOPRIGHT", -inset, -158)
+    panel.statsLine:SetHeight(1)
+
+    panel.craftValue = panel:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+    panel.craftValue:SetPoint("TOPLEFT", inset, -168)
+    panel.craftValue:SetJustifyH("LEFT")
+    panel.craftValue:SetText("-")
+
+    panel.craftLabel = panel:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    panel.craftLabel:SetPoint("BOTTOMLEFT", panel.craftValue, "BOTTOMRIGHT", 6, 2)
+    panel.craftLabel:SetJustifyH("LEFT")
+    panel.craftLabel:SetText("")
+
+    panel.craftNote = panel:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    panel.craftNote:SetWidth(contentWidth)
+    panel.craftNote:SetPoint("TOPLEFT", inset, -PROFESSION_PANEL_NOTE_TOP)
+    panel.craftNote:SetJustifyH("LEFT")
+    panel.craftNote:SetJustifyV("TOP")
+    panel.craftNote:SetText("")
+
+    local statsText = panel:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    statsText:SetWidth(contentWidth)
+    statsText:SetPoint("TOPLEFT", panel.craftNote, "BOTTOMLEFT", 0, -10)
+    statsText:SetJustifyH("LEFT")
+    statsText:SetJustifyV("TOP")
+    statsText:SetSpacing(3)
+    statsText:SetText("")
+    self.tradeSkillStatsText = statsText
+
+    panel.hint = panel:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
+    panel.hint:SetPoint("BOTTOMLEFT", inset, 10)
+    panel.hint:SetPoint("BOTTOMRIGHT", -inset, 10)
+    panel.hint:SetJustifyH("LEFT")
+    panel.hint:SetText("+N beside a reagent is the amount waiting in your reagent bank.")
 
     if hooksecurefunc and TradeSkillFrame_SetSelection and not self.tradeSkillSelectionHooked then
         hooksecurefunc("TradeSkillFrame_SetSelection", function()
@@ -5751,74 +6018,24 @@ function RB:CreateTradeSkillControls()
         self.tradeSkillNativeInputHooked = true
     end
 
-    local minusButton = self:CreateButton(parent, 22, 22, "-")
-    minusButton:SetFrameLevel((parent:GetFrameLevel() or 1) + 20)
-    minusButton:SetPoint("LEFT", quantityBox, "RIGHT", 3, 0)
-    minusButton:SetScript("OnClick", function()
-        RB:SetTradeSkillPrepareCount(RB:GetTradeSkillRepeatCount() - 1, true)
-    end)
-    minusButton:SetScript("OnEnter", function(selfButton)
-        GameTooltip:SetOwner(selfButton, "ANCHOR_RIGHT")
-        GameTooltip:SetText("Decrease prepare count", 1, 0.82, 0)
-        GameTooltip:Show()
-    end)
-    minusButton:SetScript("OnLeave", HideTooltip)
-    self.tradeSkillMinusButton = minusButton
+    self:ApplyProfessionPanelSkin()
+    self:UpdateTradeSkillControls()
+end
 
-    local plusButton = self:CreateButton(parent, 22, 22, "+")
-    plusButton:SetFrameLevel((parent:GetFrameLevel() or 1) + 20)
-    plusButton:SetPoint("LEFT", minusButton, "RIGHT", 3, 0)
-    plusButton:SetScript("OnClick", function()
-        RB:SetTradeSkillPrepareCount(RB:GetTradeSkillRepeatCount() + 1, true)
-    end)
-    plusButton:SetScript("OnEnter", function(selfButton)
-        GameTooltip:SetOwner(selfButton, "ANCHOR_RIGHT")
-        GameTooltip:SetText("Increase prepare count", 1, 0.82, 0)
-        GameTooltip:Show()
-    end)
-    plusButton:SetScript("OnLeave", HideTooltip)
-    self.tradeSkillPlusButton = plusButton
-
-    local check = CreateFrame("CheckButton", "ReagentBankUIAutoDepositLeftoversCheck", parent, "UICheckButtonTemplate")
-    check:SetWidth(24)
-    check:SetHeight(24)
-    check:SetFrameLevel((parent:GetFrameLevel() or 1) + 20)
-    check:SetPoint("LEFT", plusButton, "RIGHT", 8, 0)
-    check:SetScript("OnClick", function(selfCheck)
-        ReagentBankUIDB = ReagentBankUIDB or {}
-        ReagentBankUIDB.autoDepositLeftovers = selfCheck:GetChecked() and true or false
-        if not ReagentBankUIDB.autoDepositLeftovers then
-            RB.pendingAutoDepositLeftovers = nil
-            RB.pendingAutoDepositAt = nil
-        end
-        RB:UpdateTradeSkillControls()
-    end)
-    check:SetScript("OnEnter", function(selfCheck)
-        GameTooltip:SetOwner(selfCheck, "ANCHOR_RIGHT")
-        GameTooltip:SetText("Auto-deposit leftovers", 1, 0.82, 0)
-        GameTooltip:AddLine("When you close the profession window, deposit prepared reagent leftovers back into the reagent bank. It preserves the bag counts you had before Withdraw Needed.", 1, 1, 1, true)
-        GameTooltip:Show()
-    end)
-    check:SetScript("OnLeave", HideTooltip)
-
-    local checkText = _G[check:GetName() .. "Text"]
-    if checkText then
-        checkText:SetText("Auto-deposit leftovers")
-        checkText:SetTextColor(1.00, 0.86, 0.46)
+function RB:ApplyProfessionPanelSkin()
+    local panel = self.tradeSkillPanel
+    if not panel then
+        return
     end
 
-    local statsText = parent:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-    statsText:SetPoint("TOPLEFT", shoppingButton, "BOTTOMLEFT", 0, -6)
-    statsText:SetPoint("RIGHT", parent, "RIGHT", -28, 0)
-    statsText:SetHeight(34)
-    statsText:SetJustifyH("LEFT")
-    statsText:SetTextColor(0.82, 0.82, 0.82)
-    statsText:SetText("")
-    statsText:Hide()
-    self.tradeSkillStatsText = statsText
-
-    self.tradeSkillAutoDepositCheck = check
-    self:UpdateTradeSkillControls()
+    self:MakeBackdrop(panel, 0.96)
+    SetFontColor(panel.title, SKIN.titleText)
+    SetTextureColor(panel.titleLine, SKIN.headerLine, 0.75)
+    SetTextureColor(panel.statsLine, SKIN.headerLine, 0.45)
+    SetFontColor(panel.craftLabel, SKIN.mutedText)
+    SetFontColor(panel.craftNote, SKIN.mutedText)
+    SetFontColor(panel.checkText, SKIN.buttonText)
+    SetFontColor(panel.hint, SKIN.disabledText)
 end
 
 function RB:ApplyScale()
@@ -6033,6 +6250,21 @@ function RB:CreateFrame()
         RB:Close()
     end)
 
+    -- A single recessed strip behind both control rows groups the buttons and
+    -- separates them from the list below. BORDER keeps it above the window
+    -- backdrop, which ApplySkin recreates whenever the theme changes.
+    f.toolbarBg = f:CreateTexture(nil, "BORDER")
+    f.toolbarBg:SetTexture("Interface\\ChatFrame\\ChatFrameBackground")
+    f.toolbarBg:SetPoint("TOPLEFT", 14, -TOOLBAR_TOP)
+    f.toolbarBg:SetPoint("TOPRIGHT", -14, -TOOLBAR_TOP)
+    f.toolbarBg:SetHeight(TOOLBAR_HEIGHT)
+
+    f.toolbarLine = f:CreateTexture(nil, "ARTWORK")
+    f.toolbarLine:SetTexture("Interface\\ChatFrame\\ChatFrameBackground")
+    f.toolbarLine:SetPoint("TOPLEFT", 14, -(TOOLBAR_TOP + TOOLBAR_HEIGHT))
+    f.toolbarLine:SetPoint("TOPRIGHT", -14, -(TOOLBAR_TOP + TOOLBAR_HEIGHT))
+    f.toolbarLine:SetHeight(1)
+
     f.rootDeposit = self:CreateButton(f, ROOT_ACTION_BUTTON_WIDTH, ROOT_BUTTON_HEIGHT, "Deposit All")
     f.rootDeposit:SetPoint("TOPLEFT", ROOT_BUTTON_ROW_X, ROOT_BUTTON_ROW_Y)
     f.rootDeposit:SetScript("OnClick", function()
@@ -6096,14 +6328,6 @@ function RB:CreateFrame()
     end)
     f.previewToggle:SetScript("OnLeave", HideTooltip)
 
-    f.helpText = f:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
-    f.helpText:SetPoint("LEFT", f.previewToggle, "RIGHT", ROOT_HELP_TEXT_GAP, 0)
-    f.helpText:SetPoint("RIGHT", -18, 0)
-    f.helpText:SetJustifyH("LEFT")
-    f.helpText:SetTextColor(0.55, 0.58, 0.64)
-    f.helpText:SetText("")
-    f.helpText:Hide()
-
     f.back = self:CreateButton(f, CATEGORY_BACK_BUTTON_WIDTH, CATEGORY_BUTTON_HEIGHT, "Categories")
     f.back:SetPoint("TOPLEFT", CATEGORY_BUTTON_ROW_X, CATEGORY_BUTTON_ROW_Y)
     f.back:SetScript("OnClick", function()
@@ -6122,27 +6346,29 @@ function RB:CreateFrame()
         RB:WithdrawCategory()
     end)
 
-    f.prev = self:CreateButton(f, CATEGORY_PAGE_BUTTON_WIDTH, CATEGORY_BUTTON_HEIGHT, "Prev")
-    f.prev:SetPoint("LEFT", f.catWithdraw, "RIGHT", CATEGORY_BUTTON_GAP, 0)
-    f.prev:SetScript("OnClick", function()
-        if RB.currentCategoryId and RB.currentPage and RB.currentPage > 0 then
-            RB:RequestCategory(RB.currentCategoryId, RB.currentPage - 1)
-        end
-    end)
+    -- Paging sits flush against the right margin so the page counter lands in
+    -- the same spot on every view instead of drifting with the button widths.
+    f.pageText = f:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    f.pageText:SetWidth(CATEGORY_PAGE_TEXT_WIDTH)
+    f.pageText:SetPoint("RIGHT", f, "TOPRIGHT", -18, CATEGORY_BUTTON_ROW_Y - (CATEGORY_BUTTON_HEIGHT / 2))
+    f.pageText:SetJustifyH("RIGHT")
+    f.pageText:SetText("")
 
     f.next = self:CreateButton(f, CATEGORY_PAGE_BUTTON_WIDTH, CATEGORY_BUTTON_HEIGHT, "Next")
-    f.next:SetPoint("LEFT", f.prev, "RIGHT", CATEGORY_BUTTON_GAP, 0)
+    f.next:SetPoint("RIGHT", f.pageText, "LEFT", -CATEGORY_PAGE_TEXT_GAP, 0)
     f.next:SetScript("OnClick", function()
         if RB.currentCategoryId and RB.currentPage and RB.totalPages and RB.currentPage + 1 < RB.totalPages then
             RB:RequestCategory(RB.currentCategoryId, RB.currentPage + 1)
         end
     end)
 
-    f.pageText = f:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-    f.pageText:SetPoint("LEFT", f.next, "RIGHT", CATEGORY_PAGE_TEXT_GAP, 0)
-    f.pageText:SetPoint("RIGHT", -18, 0)
-    f.pageText:SetJustifyH("RIGHT")
-    f.pageText:SetText("")
+    f.prev = self:CreateButton(f, CATEGORY_PAGE_BUTTON_WIDTH, CATEGORY_BUTTON_HEIGHT, "Prev")
+    f.prev:SetPoint("RIGHT", f.next, "LEFT", -CATEGORY_BUTTON_GAP, 0)
+    f.prev:SetScript("OnClick", function()
+        if RB.currentCategoryId and RB.currentPage and RB.currentPage > 0 then
+            RB:RequestCategory(RB.currentCategoryId, RB.currentPage - 1)
+        end
+    end)
 
     f.shoppingImportRecipe = self:CreateButton(f, SHOPPING_RECIPE_BUTTON_WIDTH, CATEGORY_BUTTON_HEIGHT, "From Recipe")
     f.shoppingImportRecipe:SetPoint("LEFT", f.back, "RIGHT", CATEGORY_BUTTON_GAP, 0)
@@ -6162,17 +6388,14 @@ function RB:CreateFrame()
         RB:ClearShoppingList()
     end)
 
-    f.shoppingPrev = self:CreateButton(f, CATEGORY_PAGE_BUTTON_WIDTH, CATEGORY_BUTTON_HEIGHT, "Prev")
-    f.shoppingPrev:SetPoint("LEFT", f.shoppingClear, "RIGHT", CATEGORY_BUTTON_GAP, 0)
-    f.shoppingPrev:SetScript("OnClick", function()
-        if RB.currentView == "shopping" and RB.currentPage and RB.currentPage > 0 then
-            RB.currentPage = RB.currentPage - 1
-            RB:RenderShoppingList(true)
-        end
-    end)
+    f.shoppingPageText = f:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    f.shoppingPageText:SetWidth(CATEGORY_PAGE_TEXT_WIDTH)
+    f.shoppingPageText:SetPoint("RIGHT", f, "TOPRIGHT", -18, CATEGORY_BUTTON_ROW_Y - (CATEGORY_BUTTON_HEIGHT / 2))
+    f.shoppingPageText:SetJustifyH("RIGHT")
+    f.shoppingPageText:SetText("")
 
     f.shoppingNext = self:CreateButton(f, CATEGORY_PAGE_BUTTON_WIDTH, CATEGORY_BUTTON_HEIGHT, "Next")
-    f.shoppingNext:SetPoint("LEFT", f.shoppingPrev, "RIGHT", CATEGORY_BUTTON_GAP, 0)
+    f.shoppingNext:SetPoint("RIGHT", f.shoppingPageText, "LEFT", -CATEGORY_PAGE_TEXT_GAP, 0)
     f.shoppingNext:SetScript("OnClick", function()
         if RB.currentView == "shopping" and RB.currentPage and RB.totalPages and RB.currentPage + 1 < RB.totalPages then
             RB.currentPage = RB.currentPage + 1
@@ -6180,11 +6403,14 @@ function RB:CreateFrame()
         end
     end)
 
-    f.shoppingPageText = f:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-    f.shoppingPageText:SetPoint("LEFT", f.shoppingNext, "RIGHT", CATEGORY_PAGE_TEXT_GAP, 0)
-    f.shoppingPageText:SetPoint("RIGHT", -18, 0)
-    f.shoppingPageText:SetJustifyH("RIGHT")
-    f.shoppingPageText:SetText("")
+    f.shoppingPrev = self:CreateButton(f, CATEGORY_PAGE_BUTTON_WIDTH, CATEGORY_BUTTON_HEIGHT, "Prev")
+    f.shoppingPrev:SetPoint("RIGHT", f.shoppingNext, "LEFT", -CATEGORY_BUTTON_GAP, 0)
+    f.shoppingPrev:SetScript("OnClick", function()
+        if RB.currentView == "shopping" and RB.currentPage and RB.currentPage > 0 then
+            RB.currentPage = RB.currentPage - 1
+            RB:RenderShoppingList(true)
+        end
+    end)
 
     f.list = CreateFrame("Frame", nil, f)
     f.list:SetPoint("TOPLEFT", 18, -118)
@@ -6214,9 +6440,16 @@ function RB:CreateFrame()
     f.headerName:SetText("Name")
 
     f.headerCount = f.listHeader:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    f.headerCount:SetPoint("RIGHT", -8, 0)
+    f.headerCount:SetWidth(LIST_COUNT_COLUMN_WIDTH)
+    f.headerCount:SetPoint("RIGHT", -LIST_COUNT_COLUMN_INSET, 0)
     f.headerCount:SetJustifyH("RIGHT")
     f.headerCount:SetText("Stored")
+
+    f.listHeader.split = f.listHeader:CreateTexture(nil, "ARTWORK")
+    f.listHeader.split:SetTexture("Interface\\ChatFrame\\ChatFrameBackground")
+    f.listHeader.split:SetWidth(1)
+    f.listHeader.split:SetPoint("TOP", f.listHeader, "TOPRIGHT", -LIST_COLUMN_SPLIT, -4)
+    f.listHeader.split:SetPoint("BOTTOM", f.listHeader, "BOTTOMRIGHT", -LIST_COLUMN_SPLIT, 3)
 
     f.rows = {}
     for i = 1, ROW_COUNT do
@@ -6236,6 +6469,14 @@ function RB:CreateFrame()
             row.fill:SetWidth(1)
             row.fill:Hide()
         end
+
+        -- Lines up with the list header divider so stored amounts read as a
+        -- column instead of numbers floating at the end of each name.
+        row.split = row:CreateTexture(nil, "ARTWORK")
+        row.split:SetTexture("Interface\\ChatFrame\\ChatFrameBackground")
+        row.split:SetWidth(1)
+        row.split:SetPoint("TOP", row, "TOPRIGHT", -LIST_COLUMN_SPLIT, -3)
+        row.split:SetPoint("BOTTOM", row, "BOTTOMRIGHT", -LIST_COLUMN_SPLIT, 3)
 
         if row.hover then
             row:SetHighlightTexture(row.hover)

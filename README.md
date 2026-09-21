@@ -28,11 +28,13 @@ This module adds a server-backed reagent bank for trade goods, gems, and craftin
 
 ## Profession Integration
 
-Open a profession window and ReagentBankUI adds reagent tools directly to the profession frame.
+Open a profession window and ReagentBankUI docks a reagent bank sidebar to its right edge.
 
+- A craftable count for the selected recipe, counting bags and reagent bank together
 - **Withdraw Needed** pulls missing reagents for the selected recipe
-- Supports multi-craft amounts
-- Shows reagent availability from bags and reagent bank
+- A **Crafts** stepper for multi-craft amounts
+- Per-reagent `+N` badges on the recipe's reagent rows showing what is waiting in the bank, green when bags plus bank cover the craft and orange when they do not
+- A plan summary listing what to withdraw, what to buy, and which reagents are running low
 - Optional leftover auto-deposit when closing the profession window
 - **Add to AH List** adds missing recipe reagents to the shopping list
 - Note that the UI icon is attached to the outside lower portion of the character frame by default.
