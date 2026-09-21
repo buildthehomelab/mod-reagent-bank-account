@@ -32,7 +32,7 @@ Open a profession window and ReagentBankUI docks a reagent bank sidebar to its r
 
 - A craftable count for the selected recipe, counting bags and reagent bank together
 - **Withdraw Needed** pulls missing reagents for the selected recipe
-- A **Crafts** stepper for multi-craft amounts
+- A **Crafts** stepper for multi-craft amounts, with **x1**, **x100** and **Max** presets. **Max** fills in however many crafts your bags and reagent bank cover between them
 - Per-reagent `+N` badges on the recipe's reagent rows showing what is waiting in the bank, green when bags plus bank cover the craft and orange when they do not
 - A plan summary listing what to withdraw, what to buy, and which reagents are running low
 - Optional leftover auto-deposit when closing the profession window
