@@ -481,8 +481,11 @@ local PROFESSION_PANEL_WIDTH = 232
 local PROFESSION_PANEL_PADDING = 12
 local PROFESSION_PANEL_X = -33
 local PROFESSION_PANEL_Y = -12
-local PROFESSION_PANEL_NOTE_TOP = 192
-local PROFESSION_PANEL_MIN_HEIGHT = 320
+local PROFESSION_PANEL_NOTE_TOP = 216
+local PROFESSION_PANEL_MIN_HEIGHT = 344
+local PROFESSION_PRESET_BUTTON_HEIGHT = 20
+local PROFESSION_PRESET_GAP = 6
+local PROFESSION_PRESET_BATCH_COUNT = 100
 local PROFESSION_PANEL_MAX_HEIGHT = 500
 local PROFESSION_PANEL_ITEM_LIMIT = 3
 local SHOPPING_LIST_CHAT_ITEM_LIMIT = 12
@@ -1406,6 +1409,12 @@ function RB:ApplySkin()
 
     if self.tradeSkillMinusButton then
         self:StyleButton(self.tradeSkillMinusButton)
+    end
+
+    if self.tradeSkillPresetButtons then
+        for _, presetButton in ipairs(self.tradeSkillPresetButtons) do
+            self:StyleButton(presetButton)
+        end
     end
 
     if self.tradeSkillPlusButton then
@@ -4024,6 +4033,29 @@ function RB:GetTradeSkillCraftability(reagents, repeatCount)
     }
 end
 
+-- The same figure the panel headlines as "N craftable": how many crafts bags
+-- and bank cover between them, capped by the scarcest reagent. Returns nil
+-- while bank counts are still arriving, so Max cannot hand back a bags-only
+-- number that is about to change under the player.
+function RB:GetMaxCraftableCount()
+    local reagents, errText = self:GetSelectedTradeSkillReagents()
+    if errText or not reagents or #reagents == 0 then
+        return nil
+    end
+
+    local craftability = self:GetTradeSkillCraftability(reagents, self:GetTradeSkillRepeatCount())
+    if not craftability or not craftability.bankReady then
+        return nil
+    end
+
+    local combined = math.floor(tonumber(craftability.combinedCrafts) or 0)
+    if combined < TRADE_SKILL_PREPARE_COUNT_MIN then
+        return nil
+    end
+
+    return self:ClampTradeSkillPrepareCount(combined)
+end
+
 function RB:GetLowStockCraftCount()
     ReagentBankUIDB = ReagentBankUIDB or {}
     return self:ClampTradeSkillPrepareCount(tonumber(ReagentBankUIDB.lowStockCrafts) or LOW_STOCK_DEFAULT_CRAFTS)
@@ -5751,6 +5783,28 @@ function RB:UpdateTradeSkillControls()
     self:SetButtonEnabled(self.tradeSkillMinusButton, repeatCount > TRADE_SKILL_PREPARE_COUNT_MIN)
     self:SetButtonEnabled(self.tradeSkillPlusButton, repeatCount < TRADE_SKILL_PREPARE_COUNT_MAX)
 
+    if self.tradeSkillPresetButtons then
+        for _, presetButton in ipairs(self.tradeSkillPresetButtons) do
+            self:SetButtonEnabled(presetButton, enabled)
+        end
+    end
+
+    if self.tradeSkillMaxButton then
+        local maxCrafts = enabled and self:GetMaxCraftableCount() or nil
+
+        self:SetButtonEnabled(self.tradeSkillMaxButton, maxCrafts ~= nil)
+
+        if maxCrafts then
+            self.tradeSkillMaxButton.tooltipText =
+                "Prepare " .. tostring(maxCrafts) .. " craft(s), everything your bags and reagent bank cover between them."
+        elseif enabled then
+            self.tradeSkillMaxButton.tooltipText =
+                "Waiting on reagent bank counts, or no reagent is stocked well enough for a full craft."
+        else
+            self.tradeSkillMaxButton.tooltipText = errText or "Select a recipe first."
+        end
+    end
+
     local shoppingPending = self.pendingShoppingListImport ~= nil
     if shoppingPending and self.pendingShoppingListImport.createdAt and GetTime() - self.pendingShoppingListImport.createdAt > SHOPPING_LIST_IMPORT_TIMEOUT then
         self.pendingShoppingListImport = nil
@@ -5944,8 +5998,63 @@ function RB:CreateTradeSkillControls()
     local initialCount = tonumber(ReagentBankUIDB.tradeSkillPrepareCount) or self:GetNativeTradeSkillRepeatCount() or 1
     self:SetTradeSkillPrepareCount(initialCount, false)
 
+    -- Presets only move the Crafts count. Withdraw Needed stays a separate,
+    -- deliberate click, so a large pull is always previewed in the plan summary
+    -- first -- withdrawing does not check free bag space.
+    local presetWidth = math.floor((contentWidth - (PROFESSION_PRESET_GAP * 2)) / 3)
+    self.tradeSkillPresetButtons = {}
+
+    local presets = {
+        {
+            label = "x1",
+            tooltip = "Back to a single craft.",
+            count = function() return TRADE_SKILL_PREPARE_COUNT_MIN end,
+        },
+        {
+            label = "x" .. tostring(PROFESSION_PRESET_BATCH_COUNT),
+            tooltip = "Prepare " .. tostring(PROFESSION_PRESET_BATCH_COUNT) .. " crafts. Anything your bags and bank cannot cover shows up under Buy.",
+            count = function() return PROFESSION_PRESET_BATCH_COUNT end,
+        },
+        {
+            label = "Max",
+            tooltip = "Prepare as many crafts as your bags and reagent bank can cover between them.",
+            count = function() return RB:GetMaxCraftableCount() end,
+        },
+    }
+
+    for presetIndex, preset in ipairs(presets) do
+        local presetButton = self:CreateButton(panel, presetWidth, PROFESSION_PRESET_BUTTON_HEIGHT, preset.label)
+
+        if presetIndex == 1 then
+            presetButton:SetPoint("TOPLEFT", inset, -67)
+        else
+            presetButton:SetPoint("LEFT", self.tradeSkillPresetButtons[presetIndex - 1], "RIGHT", PROFESSION_PRESET_GAP, 0)
+        end
+
+        presetButton.tooltipTitle = preset.label == "Max" and "Max craftable" or ("Prepare " .. preset.label)
+        presetButton.tooltipText = preset.tooltip
+
+        presetButton:SetScript("OnClick", function()
+            local count = preset.count()
+            if count then
+                RB:SetTradeSkillPrepareCount(count, true)
+            end
+        end)
+        presetButton:SetScript("OnEnter", function(selfButton)
+            GameTooltip:SetOwner(selfButton, "ANCHOR_RIGHT")
+            GameTooltip:SetText(selfButton.tooltipTitle or "Prepare count", 1, 0.82, 0)
+            GameTooltip:AddLine(selfButton.tooltipText or "", 1, 1, 1, true)
+            GameTooltip:Show()
+        end)
+        presetButton:SetScript("OnLeave", HideTooltip)
+
+        self.tradeSkillPresetButtons[presetIndex] = presetButton
+    end
+
+    self.tradeSkillMaxButton = self.tradeSkillPresetButtons[3]
+
     local button = self:CreateButton(panel, contentWidth, 24, "Withdraw Needed")
-    button:SetPoint("TOPLEFT", inset, -71)
+    button:SetPoint("TOPLEFT", inset, -95)
     button:SetScript("OnClick", function()
         RB:WithdrawNeededForSelectedRecipe()
     end)
@@ -6006,12 +6115,12 @@ function RB:CreateTradeSkillControls()
 
     panel.statsLine = panel:CreateTexture(nil, "ARTWORK")
     panel.statsLine:SetTexture("Interface\\ChatFrame\\ChatFrameBackground")
-    panel.statsLine:SetPoint("TOPLEFT", inset, -158)
-    panel.statsLine:SetPoint("TOPRIGHT", -inset, -158)
+    panel.statsLine:SetPoint("TOPLEFT", inset, -182)
+    panel.statsLine:SetPoint("TOPRIGHT", -inset, -182)
     panel.statsLine:SetHeight(1)
 
     panel.craftValue = panel:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
-    panel.craftValue:SetPoint("TOPLEFT", inset, -168)
+    panel.craftValue:SetPoint("TOPLEFT", inset, -192)
     panel.craftValue:SetJustifyH("LEFT")
     panel.craftValue:SetText("-")
 
