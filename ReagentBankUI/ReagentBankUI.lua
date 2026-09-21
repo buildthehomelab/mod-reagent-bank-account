@@ -470,10 +470,13 @@ local PROFESSION_PREFETCH_PAIRS_PER_COMMAND = 15
 local PROFESSION_PREFETCH_SEND_INTERVAL = 0.3
 local PROFESSION_PREFETCH_TIMEOUT = 20.0
 local REAGENT_OVERLAY_ROW_COUNT = 8
-local REAGENT_OVERLAY_TEXT_WIDTH = 46
-local REAGENT_OVERLAY_RESERVED_WIDTH = 52
-local REAGENT_NAME_MIN_WIDTH = 90
-local REAGENT_NAME_FIXED_WIDTH_HINT = 150
+local REAGENT_OVERLAY_FONT_SIZE = 10
+local REAGENT_OVERLAY_GAP = 5
+-- Reagent rows are not always Blizzard's 296px single column; skins lay them
+-- out two-up in cells barely wider than the name itself. Past roughly this
+-- share of the column, making room for the badge only pushes the name onto an
+-- extra line, so a badge that still will not fit is hidden instead.
+local REAGENT_NAME_MAX_RESERVE_RATIO = 0.42
 local PROFESSION_PANEL_WIDTH = 232
 local PROFESSION_PANEL_PADDING = 12
 local PROFESSION_PANEL_X = -33
@@ -743,6 +746,27 @@ local function FormatCount(value)
     end
 
     if value >= 10000 then
+        return string.format("%.1fk", value / 1000)
+    end
+
+    return tostring(value)
+end
+
+-- FormatCount keeps four significant digits below 10k, which is right for the
+-- panel lists but too wide for a badge squeezed into a reagent cell. Cap the
+-- badge at five characters so it always has room.
+local function FormatBadgeCount(value)
+    value = math.floor(tonumber(value) or 0)
+
+    if value >= 1000000 then
+        return string.format("%dm", math.floor(value / 1000000))
+    end
+
+    if value >= 10000 then
+        return string.format("%dk", math.floor(value / 1000))
+    end
+
+    if value >= 1000 then
         return string.format("%.1fk", value / 1000)
     end
 
@@ -4359,28 +4383,47 @@ function RB:GetReagentNameFontString(index)
     return _G["TradeSkillReagent" .. tostring(index) .. "Name"]
 end
 
--- Blizzard's reagent name font string owns the full width of the row, so an
--- overlay pinned to the right edge lands on top of longer names. Shrink the
--- name while the overlay is up and hand the width back when it goes away.
+-- The reagent name font string owns the whole text column, so a badge pinned to
+-- the right edge butts straight into longer names. Narrow the column by exactly
+-- what the badge needs while it is up, and hand the width back when it goes
+-- away. Returns how much was actually granted, which can be less than asked.
 function RB:SetReagentNameReserved(index, reserved)
     local nameText = self:GetReagentNameFontString(index)
     if not nameText or not nameText.SetWidth or not nameText.GetWidth then
-        return
+        return 0
     end
 
-    local original = self.reagentNameWidths and self.reagentNameWidths[index]
-    if not original or original < REAGENT_NAME_FIXED_WIDTH_HINT then
-        return
+    self.reagentNameWidths = self.reagentNameWidths or {}
+    self.reagentNameReserved = self.reagentNameReserved or {}
+
+    reserved = math.max(0, math.floor(tonumber(reserved) or 0))
+
+    local applied = math.floor(tonumber(self.reagentNameReserved[index]) or 0)
+    if applied <= 0 then
+        -- Nothing is taken from the column right now, so whatever it measures is
+        -- its natural width. Reading it here rather than once at creation keeps
+        -- us correct when a skin lays the row out after we first saw it.
+        local natural = tonumber(nameText:GetWidth()) or 0
+        if natural > 0 then
+            self.reagentNameWidths[index] = natural
+        end
     end
 
-    local target = original
-    if reserved and reserved > 0 then
-        target = math.max(REAGENT_NAME_MIN_WIDTH, original - reserved)
+    local original = math.floor(tonumber(self.reagentNameWidths[index]) or 0)
+    if original <= 0 then
+        return 0
     end
 
-    if math.abs((tonumber(nameText:GetWidth()) or 0) - target) > 0.5 then
-        nameText:SetWidth(target)
+    if reserved > 0 then
+        reserved = math.min(reserved, math.floor(original * REAGENT_NAME_MAX_RESERVE_RATIO))
     end
+
+    if reserved ~= applied then
+        self.reagentNameReserved[index] = reserved
+        nameText:SetWidth(original - reserved)
+    end
+
+    return reserved
 end
 
 function RB:HideReagentBankOverlays()
@@ -4403,21 +4446,14 @@ function RB:EnsureReagentBankOverlays()
     end
 
     self.reagentBankOverlays = self.reagentBankOverlays or {}
-    self.reagentNameWidths = self.reagentNameWidths or {}
 
     for index = 1, REAGENT_OVERLAY_ROW_COUNT do
         if not self.reagentBankOverlays[index] then
             local row = _G["TradeSkillReagent" .. tostring(index)]
 
             if row and row.CreateFontString then
-                local nameText = self:GetReagentNameFontString(index)
-                if nameText and nameText.GetWidth then
-                    self.reagentNameWidths[index] = tonumber(nameText:GetWidth()) or 0
-                end
-
                 local overlay = row:CreateFontString(nil, "OVERLAY")
-                overlay:SetFont(STANDARD_TEXT_FONT, 11, "OUTLINE")
-                overlay:SetWidth(REAGENT_OVERLAY_TEXT_WIDTH)
+                overlay:SetFont(STANDARD_TEXT_FONT, REAGENT_OVERLAY_FONT_SIZE, "OUTLINE")
                 overlay:SetPoint("RIGHT", row, "RIGHT", -3, 0)
                 overlay:SetJustifyH("RIGHT")
                 overlay:Hide()
@@ -4498,7 +4534,7 @@ function RB:UpdateReagentBankOverlays()
                         bagCount = tonumber(GetItemCount(itemEntry, false)) or 0
                     end
 
-                    overlay:SetText("+" .. FormatCount(bankAmount))
+                    overlay:SetText("+" .. FormatBadgeCount(bankAmount))
 
                     if requiredCount <= 0 or bagCount + bankAmount >= requiredCount then
                         overlay:SetTextColor(0.50, 0.88, 0.50)
@@ -4506,17 +4542,34 @@ function RB:UpdateReagentBankOverlays()
                         overlay:SetTextColor(1.00, 0.69, 0.29)
                     end
 
-                    overlay:Show()
-                    shown = true
+                    -- Size the badge to the text it is actually showing, then
+                    -- claim that much plus a gap. A badge the column cannot
+                    -- spare room for is dropped rather than printed against the
+                    -- reagent name; the sidebar still lists the same amount.
+                    local badgeWidth = 0
+                    if overlay.GetStringWidth then
+                        badgeWidth = math.ceil(tonumber(overlay:GetStringWidth()) or 0)
+                    end
+
+                    if badgeWidth > 0 then
+                        overlay:SetWidth(badgeWidth)
+
+                        local needed = badgeWidth + REAGENT_OVERLAY_GAP
+                        if self:SetReagentNameReserved(row, needed) >= needed then
+                            overlay:Show()
+                            shown = true
+                        end
+                    end
                 end
             end
         end
 
-        if overlay and not shown then
-            overlay:Hide()
+        if not shown then
+            if overlay then
+                overlay:Hide()
+            end
+            self:SetReagentNameReserved(row, 0)
         end
-
-        self:SetReagentNameReserved(row, shown and REAGENT_OVERLAY_RESERVED_WIDTH or 0)
     end
 end
 
