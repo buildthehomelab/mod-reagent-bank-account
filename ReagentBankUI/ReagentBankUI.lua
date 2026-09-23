@@ -3742,9 +3742,18 @@ function RB:RegisterRecipeProvider(provider)
         return false
     end
 
-    self.recipeProvider = provider
+    -- Several addons can register (e.g. MillingUI and ProspectingUI); the
+    -- sidebar follows whichever of their windows was opened last.
+    self.recipeProviders = self.recipeProviders or {}
+    for _, registered in ipairs(self.recipeProviders) do
+        if registered.frame == provider.frame then
+            return false
+        end
+    end
+    table.insert(self.recipeProviders, provider)
 
     provider.frame:HookScript("OnShow", function()
+        RB.lastShownRecipeProvider = provider
         RB:CreateTradeSkillControls()
         RB:AttachTradeSkillControls()
         RB:DockTradeSkillPanel()
@@ -3759,15 +3768,27 @@ function RB:RegisterRecipeProvider(provider)
         RB:ResetProfessionBankPrefetch()
         RB:HideReagentBankOverlays()
         RB:HandleTradeSkillClosed()
+
+        -- Another provider's window is still open and now owns the sidebar.
+        if RB:GetActiveRecipeProvider() then
+            RB:PrefetchProfessionBankCounts(true)
+            RB:UpdateTradeSkillControls()
+        end
     end)
 
     return true
 end
 
 function RB:GetActiveRecipeProvider()
-    local provider = self.recipeProvider
-    if provider and provider.frame and provider.frame:IsShown() then
-        return provider
+    local last = self.lastShownRecipeProvider
+    if last and last.frame:IsShown() then
+        return last
+    end
+
+    for _, provider in ipairs(self.recipeProviders or {}) do
+        if provider.frame:IsShown() then
+            return provider
+        end
     end
     return nil
 end
@@ -4592,9 +4613,8 @@ function RB:SetReagentNameReserved(index, reserved)
 end
 
 function RB:HideReagentBankOverlays()
-    local provider = self.recipeProvider
-    if provider and type(provider.reagentButtons) == "table" then
-        for _, button in ipairs(provider.reagentButtons) do
+    for _, provider in ipairs(self.recipeProviders or {}) do
+        for _, button in ipairs(provider.reagentButtons or {}) do
             if button.reagentBankOverlay then
                 button.reagentBankOverlay:Hide()
             end
