@@ -5,97 +5,11 @@
   <!--
     ReagentBankUI template-only XML.
 
-    This file intentionally defines only reusable visual pieces. All runtime
+    This file only defines the list row templates; buttons, edit boxes and
+    close buttons come from Blizzard's own templates. All runtime
     behavior, server protocol handling, SavedVariables, TradeSkill hooks, and
     row population stay in ReagentBankUI.lua.
   -->
-
-  <Button name="ReagentBankUIButtonTemplate" virtual="true">
-    <Layers>
-      <Layer level="BORDER">
-        <Texture parentKey="shine" file="Interface\ChatFrame\ChatFrameBackground">
-          <Size>
-            <AbsDimension x="1" y="7"/>
-          </Size>
-          <Anchors>
-            <Anchor point="TOPLEFT">
-              <Offset>
-                <AbsDimension x="2" y="-2"/>
-              </Offset>
-            </Anchor>
-            <Anchor point="TOPRIGHT">
-              <Offset>
-                <AbsDimension x="-2" y="-2"/>
-              </Offset>
-            </Anchor>
-          </Anchors>
-        </Texture>
-      </Layer>
-      <Layer level="HIGHLIGHT">
-        <Texture parentKey="hover" file="Interface\ChatFrame\ChatFrameBackground">
-          <Anchors>
-            <Anchor point="TOPLEFT"/>
-            <Anchor point="BOTTOMRIGHT"/>
-          </Anchors>
-        </Texture>
-      </Layer>
-      <Layer level="OVERLAY">
-        <FontString parentKey="label" inherits="GameFontHighlightSmall" justifyH="CENTER">
-          <Anchors>
-            <Anchor point="CENTER"/>
-          </Anchors>
-        </FontString>
-      </Layer>
-    </Layers>
-  </Button>
-
-  <Button name="ReagentBankUICloseButtonTemplate" virtual="true">
-    <Size>
-      <AbsDimension x="24" y="24"/>
-    </Size>
-    <Layers>
-      <Layer level="HIGHLIGHT">
-        <Texture parentKey="hover" file="Interface\ChatFrame\ChatFrameBackground">
-          <Anchors>
-            <Anchor point="TOPLEFT"/>
-            <Anchor point="BOTTOMRIGHT"/>
-          </Anchors>
-        </Texture>
-      </Layer>
-      <Layer level="OVERLAY">
-        <FontString parentKey="label" inherits="GameFontNormal" justifyH="CENTER">
-          <Anchors>
-            <Anchor point="CENTER">
-              <Offset>
-                <AbsDimension x="0" y="1"/>
-              </Offset>
-            </Anchor>
-          </Anchors>
-        </FontString>
-      </Layer>
-    </Layers>
-  </Button>
-
-  <EditBox name="ReagentBankUIEditBoxTemplate" virtual="true">
-    <Layers>
-      <Layer level="BACKGROUND">
-        <Texture parentKey="focusGlow" file="Interface\ChatFrame\ChatFrameBackground" hidden="true">
-          <Anchors>
-            <Anchor point="TOPLEFT">
-              <Offset>
-                <AbsDimension x="1" y="-1"/>
-              </Offset>
-            </Anchor>
-            <Anchor point="BOTTOMRIGHT">
-              <Offset>
-                <AbsDimension x="-1" y="1"/>
-              </Offset>
-            </Anchor>
-          </Anchors>
-        </Texture>
-      </Layer>
-    </Layers>
-  </EditBox>
 
   <Button name="ReagentBankUIListRowTemplate" virtual="true">
     <Size>
@@ -135,7 +49,7 @@
         </Texture>
       </Layer>
       <Layer level="HIGHLIGHT">
-        <Texture parentKey="hover" file="Interface\ChatFrame\ChatFrameBackground">
+        <Texture parentKey="hover" file="Interface\QuestFrame\UI-QuestTitleHighlight" alphaMode="ADD">
           <Anchors>
             <Anchor point="TOPLEFT"/>
             <Anchor point="BOTTOMRIGHT"/>
