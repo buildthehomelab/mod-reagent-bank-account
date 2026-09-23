@@ -79,7 +79,7 @@ local ITEM_CACHE_REFRESH_INTERVAL = 0.35
 local ITEM_CACHE_REFRESH_TIMEOUT = 8.0
 local AUTO_DEPOSIT_AFTER_CLOSE_DELAY = 0.80
 local AUTO_DEPOSIT_PREP_EXPIRE_SECONDS = 300
-local AUTO_DEPOSIT_TICKER_DEFAULT_SECONDS = 30
+local AUTO_DEPOSIT_TICKER_DEFAULT_SECONDS = 300
 local AUTO_DEPOSIT_TICKER_MIN_SECONDS = 30
 local AUTO_DEPOSIT_TICKER_MAX_SECONDS = 3600
 local AUTO_DEPOSIT_TICKER_RETRY_DELAY = 10
@@ -1255,17 +1255,20 @@ function RB:SetAutoDepositTickerSeconds(seconds, silent)
 end
 
 
-function RB:DisableAutoDepositTickerForProfessionWithdraw()
-    if not self:IsAutoDepositTickerEnabled() then
+function RB:IsProfessionWindowOpen()
+    return (TradeSkillFrame and TradeSkillFrame:IsShown()) or self:GetActiveRecipeProvider() ~= nil
+end
+
+-- The periodic ticker holds off while a profession window is open so it does not
+-- deposit reagents withdrawn for a craft. Closing the window restarts the countdown;
+-- if another profession window is still open the ticker simply pauses again.
+function RB:ResumeAutoDepositTickerAfterProfession()
+    if not self.autoDepositPausedForProfession then
         return
     end
 
-    self:SetAutoDepositTickerSeconds(0, true)
-    PrintAddon("periodic auto-deposit disabled because you withdrew reagents for a profession recipe.")
-
-    if self.frame and self.frame:IsShown() then
-        self:Status("Periodic auto-deposit disabled for profession reagent prep.", 1.00, 0.82, 0.32)
-    end
+    self.autoDepositPausedForProfession = nil
+    self:RestartAutoDepositTicker()
 end
 
 function RB:ApplyAutoDepositTickerBox(silent)
@@ -1357,6 +1360,12 @@ function RB:RunAutoDepositTicker(now)
     end
 
     if now < self.nextAutoDepositTickerAt then
+        return
+    end
+
+    if self:IsProfessionWindowOpen() then
+        self.autoDepositPausedForProfession = true
+        self.nextAutoDepositTickerAt = now + AUTO_DEPOSIT_TICKER_RETRY_DELAY
         return
     end
 
@@ -4620,7 +4629,6 @@ function RB:WithdrawNeededForSelectedRecipe()
         return
     end
 
-    self:DisableAutoDepositTickerForProfessionWithdraw()
     self:ArmAutoDepositLeftovers(needs, recipeName, repeatCount)
 
     self:SendItemAmountCommands("withdraw needed", needs, TRANSACTION_MAX_PAIRS_PER_COMMAND)
@@ -4663,6 +4671,7 @@ end
 
 function RB:HandleTradeSkillClosed()
     self:UpdateTradeSkillControls()
+    self:ResumeAutoDepositTickerAfterProfession()
 
     local pending = self.pendingAutoDepositLeftovers
     if not pending then

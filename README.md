@@ -21,7 +21,7 @@ This module adds a server-backed reagent bank for trade goods, gems, and craftin
 - Reverse last deposit/withdraw transaction
 - Sort categories and items by several modes
 - Movable, scalable addon window built from the default Blizzard UI
-- Periodic auto-deposit timer
+- Periodic auto-deposit timer (default every 300 seconds; paused while a profession window is open)
 - Character paperdoll launcher button
 
 ---
@@ -36,6 +36,7 @@ Open a profession window and ReagentBankUI docks a reagent bank sidebar to its r
 - Per-reagent `+N` badges on the recipe's reagent rows showing what is waiting in the bank, green when bags plus bank cover the craft and orange when they do not
 - A plan summary listing what to withdraw, what to buy, and which reagents are running low
 - Optional leftover auto-deposit when closing the profession window
+- Periodic auto-deposit pauses while the profession window is open and resumes when you close it
 - **Add to AH List** adds missing recipe reagents to the shopping list
 - Note that the UI icon is attached to the outside lower portion of the character frame by default.
 
