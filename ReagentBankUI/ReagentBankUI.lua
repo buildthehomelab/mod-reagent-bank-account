@@ -69,6 +69,10 @@ local QUICK_WITHDRAW_WIDTH = 470
 local ROW_COUNT = 15
 local ROW_HEIGHT = 24
 local ROW_SPACING = 2
+-- The server's page size is configurable (MaxItemsPerPage, up to 50), so the
+-- list scrolls instead of dropping whatever does not fit in ROW_COUNT rows.
+local LIST_ROW_INSET = 8
+local LIST_SCROLL_ROW_INSET = 30
 local REQUEST_TIMEOUT_SECONDS = 8.0
 local MUTATION_REFRESH_DELAY = 0.85
 local ITEM_CACHE_REFRESH_INTERVAL = 0.35
@@ -5820,6 +5824,18 @@ function RB:CreateFrame()
         f.rows[i] = row
     end
 
+    f.listScroll = CreateFrame("ScrollFrame", "ReagentBankUIListScrollFrame", f.list, "FauxScrollFrameTemplate")
+    f.listScroll:SetPoint("TOP", f.rows[1], "TOP", 0, 0)
+    f.listScroll:SetPoint("BOTTOM", f.rows[ROW_COUNT], "BOTTOM", 0, 0)
+    f.listScroll:SetPoint("LEFT", f.list, "LEFT", LIST_ROW_INSET, 0)
+    f.listScroll:SetPoint("RIGHT", f.list, "RIGHT", -LIST_SCROLL_ROW_INSET, 0)
+    f.listScroll:SetScript("OnVerticalScroll", function(selfScroll, offset)
+        FauxScrollFrame_OnVerticalScroll(selfScroll, offset, ROW_HEIGHT + ROW_SPACING, function()
+            RB:RefreshListWindow()
+        end)
+    end)
+    f.listScroll:Hide()
+
     f.detail = CreateFrame("Frame", nil, f)
     f.detail:SetPoint("TOPLEFT", 18, -118)
     f.detail:SetPoint("BOTTOMRIGHT", -18, 54)
@@ -6327,8 +6343,22 @@ function RB:UpdateControls()
     self:UpdateUndoButton()
 end
 
+function RB:SetListRowInset(inset)
+    local f = self.frame
+    local rowWidth = (f.list:GetWidth() or 0) - LIST_ROW_INSET - inset
+
+    f.listHeader:SetPoint("RIGHT", -inset, 0)
+    for _, row in ipairs(f.rows) do
+        row:SetPoint("RIGHT", -inset, 0)
+        row.fillWidth = rowWidth > 0 and rowWidth or nil
+    end
+end
+
 function RB:ClearRows()
     local f = self.frame
+
+    f.listScroll:Hide()
+    self:SetListRowInset(LIST_ROW_INSET)
 
     for _, row in ipairs(f.rows) do
         row.kind = nil
@@ -6363,7 +6393,9 @@ function RB:SetRowFill(row, value, maxValue)
         return
     end
 
-    local width = row:GetWidth() or 0
+    -- fillWidth is set when the row inset changes, because GetWidth can still
+    -- report the old anchors until the next layout pass.
+    local width = row.fillWidth or row:GetWidth() or 0
     if width <= 0 then
         width = 640
     end
@@ -6398,6 +6430,57 @@ function RB:SetEmptyRow(text)
     row.text:SetText(text or "Nothing to show.")
     row.count:SetText("")
     row:Show()
+end
+
+-- Shows ROW_COUNT entries of self.listEntries starting at the scroll offset.
+-- scrollKey identifies what the list holds; a new key starts back at the top,
+-- while re-rendering the same list (e.g. after a withdraw) keeps the position.
+function RB:SetListEntries(entries, fillRow, scrollKey)
+    local f = self.frame
+
+    self.listEntries = entries or {}
+    self.listFillRow = fillRow
+
+    if self.listScrollKey ~= scrollKey then
+        self.listScrollKey = scrollKey
+        f.listScroll.offset = 0
+        ReagentBankUIListScrollFrameScrollBar:SetValue(0)
+    end
+
+    self:RefreshListWindow()
+end
+
+function RB:RefreshListWindow()
+    local f = self.frame
+    local entries = self.listEntries or {}
+
+    if self.refreshingListWindow or not self.listFillRow then
+        return
+    end
+
+    -- FauxScrollFrame_Update can clamp the scrollbar, which fires
+    -- OnVerticalScroll and would re-enter this function.
+    self.refreshingListWindow = true
+    self:ClearRows()
+    FauxScrollFrame_Update(f.listScroll, #entries, ROW_COUNT, ROW_HEIGHT + ROW_SPACING)
+    self.refreshingListWindow = false
+
+    if f.listScroll:IsShown() then
+        self:SetListRowInset(LIST_SCROLL_ROW_INSET)
+    end
+
+    local offset = tonumber(f.listScroll.offset) or 0
+    offset = math.max(0, math.min(offset, math.max(#entries - ROW_COUNT, 0)))
+
+    for rowIndex = 1, ROW_COUNT do
+        local entry = entries[offset + rowIndex]
+        if not entry then
+            break
+        end
+
+        self.listFillRow(f.rows[rowIndex], entry)
+        f.rows[rowIndex]:Show()
+    end
 end
 
 function RB:RenderRoot(preserveStatus)
@@ -6475,25 +6558,21 @@ function RB:RenderRoot(preserveStatus)
         end)
     end
 
-    for index, category in ipairs(categories) do
-        local row = f.rows[index]
-        if row then
-            local icon = GetItemIcon(category.sample) or "Interface\\Icons\\INV_Misc_QuestionMark"
+    self:SetListEntries(categories, function(row, category)
+        local icon = GetItemIcon(category.sample) or "Interface\\Icons\\INV_Misc_QuestionMark"
 
-            row.kind = "category"
-            row.categoryId = category.id
-            row.item = nil
-            row.icon:Show()
-            row.icon:SetTexture(icon)
-            row.text:ClearAllPoints()
-            row.text:SetPoint("LEFT", row.icon, "RIGHT", 9, 0)
-            row.text:SetPoint("RIGHT", -170, 0)
-            row.text:SetText(category.name)
-            row.count:SetText(FormatCount(category.types) .. " types / " .. FormatCount(category.amount))
-            self:SetRowFill(row, category.amount, maxCategoryAmount)
-            row:Show()
-        end
-    end
+        row.kind = "category"
+        row.categoryId = category.id
+        row.item = nil
+        row.icon:Show()
+        row.icon:SetTexture(icon)
+        row.text:ClearAllPoints()
+        row.text:SetPoint("LEFT", row.icon, "RIGHT", 9, 0)
+        row.text:SetPoint("RIGHT", -170, 0)
+        row.text:SetText(category.name)
+        row.count:SetText(FormatCount(category.types) .. " types / " .. FormatCount(category.amount))
+        RB:SetRowFill(row, category.amount, maxCategoryAmount)
+    end, "root")
 
     self:UpdateControls()
 
@@ -6539,28 +6618,27 @@ function RB:RenderCategory(preserveStatus)
         end
     end
 
-    for index, item in ipairs(self.items or {}) do
-        local row = f.rows[index]
-        if row then
-            local icon, name, link, stackCount, missingInfo = GetItemDisplay(item.entry)
-
-            if missingInfo then
-                missingItemInfo = true
-            end
-
-            row.kind = "item"
-            row.item = item
-            row.icon:Show()
-            row.icon:SetTexture(icon)
-            row.text:ClearAllPoints()
-            row.text:SetPoint("LEFT", row.icon, "RIGHT", 9, 0)
-            row.text:SetPoint("RIGHT", -170, 0)
-            row.text:SetText(link or name)
-            row.count:SetText("x" .. FormatCount(item.amount))
-            self:SetRowFill(row, item.amount, maxItemAmount)
-            row:Show()
+    for _, item in ipairs(self.items or {}) do
+        local _, _, _, _, missingInfo = GetItemDisplay(item.entry)
+        if missingInfo then
+            missingItemInfo = true
         end
     end
+
+    self:SetListEntries(self.items, function(row, item)
+        local icon, name, link = GetItemDisplay(item.entry)
+
+        row.kind = "item"
+        row.item = item
+        row.icon:Show()
+        row.icon:SetTexture(icon)
+        row.text:ClearAllPoints()
+        row.text:SetPoint("LEFT", row.icon, "RIGHT", 9, 0)
+        row.text:SetPoint("RIGHT", -170, 0)
+        row.text:SetText(link or name)
+        row.count:SetText("x" .. FormatCount(item.amount))
+        RB:SetRowFill(row, item.amount, maxItemAmount)
+    end, "category:" .. tostring(self.currentCategoryId) .. ":" .. tostring(page))
 
     if not self.items or #self.items == 0 then
         self:SetEmptyRow("No stored reagents in this category.")
@@ -6627,6 +6705,9 @@ function RB:RenderShoppingList(preserveStatus)
 
     self:SetCommonVisibility("shopping")
     self:ClearRows()
+    -- The AH list pages on its own and always fits, so no scroll state.
+    self.listFillRow = nil
+    self.listScrollKey = nil
 
     local missingItemInfo = false
     local startIndex = (page * ROW_COUNT) + 1
