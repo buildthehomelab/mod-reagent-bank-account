@@ -4625,17 +4625,12 @@ function RB:UpdateProfessionPanelHeight()
     end
     textHeight = math.max(textHeight, lineCount * 14)
 
-    local hintHeight = 0
-    if panel.hint and panel.hint.GetStringHeight then
-        hintHeight = tonumber(panel.hint:GetStringHeight()) or 0
-    end
-
     local noteHeight = 0
     if panel.craftNote and panel.craftNote.GetStringHeight then
         noteHeight = tonumber(panel.craftNote:GetStringHeight()) or 0
     end
 
-    local height = PROFESSION_PANEL_NOTE_TOP + noteHeight + 10 + textHeight + 14 + hintHeight + 12
+    local height = PROFESSION_PANEL_NOTE_TOP + noteHeight + 10 + textHeight + 14
     panel:SetHeight(Clamp(height, PROFESSION_PANEL_MIN_HEIGHT, PROFESSION_PANEL_MAX_HEIGHT))
 end
 
@@ -5901,6 +5896,17 @@ function RB:CreateTradeSkillControls()
     panel:SetPoint("TOPLEFT", parent, "TOPRIGHT", PROFESSION_PANEL_X, PROFESSION_PANEL_Y)
     panel:SetFrameLevel((parent:GetFrameLevel() or 1) + 5)
     panel:EnableMouse(true)
+    -- Dragging and closing only last until the profession window closes;
+    -- DockTradeSkillPanel puts it back beside the frame on the next open.
+    panel:SetMovable(true)
+    panel:SetClampedToScreen(true)
+    panel:RegisterForDrag("LeftButton")
+    panel:SetScript("OnDragStart", function(selfPanel)
+        selfPanel:StartMoving()
+    end)
+    panel:SetScript("OnDragStop", function(selfPanel)
+        selfPanel:StopMovingOrSizing()
+    end)
     self:MakeBackdrop(panel, 0.96)
     self.tradeSkillPanel = panel
 
@@ -5911,6 +5917,21 @@ function RB:CreateTradeSkillControls()
     panel.title:SetPoint("TOPLEFT", inset, -12)
     panel.title:SetJustifyH("LEFT")
     panel.title:SetText("Reagent Bank")
+
+    panel.close = self:CreateCloseButton(panel)
+    panel.close:SetWidth(20)
+    panel.close:SetHeight(20)
+    panel.close:SetPoint("TOPRIGHT", -8, -7)
+    panel.close:SetScript("OnClick", function()
+        panel:Hide()
+    end)
+    panel.close:SetScript("OnEnter", function(selfButton)
+        GameTooltip:SetOwner(selfButton, "ANCHOR_RIGHT")
+        GameTooltip:SetText("Hide Reagent Bank", 1, 0.82, 0)
+        GameTooltip:AddLine("Comes back the next time you open a profession.", 1, 1, 1, true)
+        GameTooltip:Show()
+    end)
+    panel.close:SetScript("OnLeave", HideTooltip)
 
     panel.titleLine = panel:CreateTexture(nil, "ARTWORK")
     panel.titleLine:SetTexture("Interface\\ChatFrame\\ChatFrameBackground")
@@ -6145,12 +6166,6 @@ function RB:CreateTradeSkillControls()
     statsText:SetText("")
     self.tradeSkillStatsText = statsText
 
-    panel.hint = panel:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
-    panel.hint:SetPoint("BOTTOMLEFT", inset, 10)
-    panel.hint:SetPoint("BOTTOMRIGHT", -inset, 10)
-    panel.hint:SetJustifyH("LEFT")
-    panel.hint:SetText("+N beside a reagent is the amount waiting in your reagent bank.")
-
     if hooksecurefunc and TradeSkillFrame_SetSelection and not self.tradeSkillSelectionHooked then
         hooksecurefunc("TradeSkillFrame_SetSelection", function()
             RB:UpdateTradeSkillControls()
@@ -6184,6 +6199,18 @@ function RB:CreateTradeSkillControls()
     self:UpdateTradeSkillControls()
 end
 
+function RB:DockTradeSkillPanel()
+    local panel = self.tradeSkillPanel
+    local parent = _G.TradeSkillFrame
+    if not panel or not parent then
+        return
+    end
+
+    panel:ClearAllPoints()
+    panel:SetPoint("TOPLEFT", parent, "TOPRIGHT", PROFESSION_PANEL_X, PROFESSION_PANEL_Y)
+    panel:Show()
+end
+
 function RB:ApplyProfessionPanelSkin()
     local panel = self.tradeSkillPanel
     if not panel then
@@ -6197,7 +6224,9 @@ function RB:ApplyProfessionPanelSkin()
     SetFontColor(panel.craftLabel, SKIN.mutedText)
     SetFontColor(panel.craftNote, SKIN.mutedText)
     SetFontColor(panel.checkText, SKIN.buttonText)
-    SetFontColor(panel.hint, SKIN.disabledText)
+    if panel.close then
+        self:StyleCloseButton(panel.close)
+    end
 end
 
 function RB:ApplyScale()
@@ -8250,6 +8279,7 @@ RB:SetScript("OnEvent", function(self, event, ...)
         self:CreateTradeSkillControls()
     elseif event == "TRADE_SKILL_SHOW" then
         self:CreateTradeSkillControls()
+        self:DockTradeSkillPanel()
         self:PrefetchProfessionBankCounts()
         self:UpdateTradeSkillControls()
     elseif event == "TRADE_SKILL_UPDATE" then
