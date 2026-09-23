@@ -2,7 +2,7 @@
 ## Title: Reagent Bank UI
 ## Notes: Standalone UI for the AzerothCore Reagent Bank Account module. No banker NPC required.
 ## Author: Dinkledork
-## Version: 2.3.0-craft-presets
+## Version: 2.3.1-list-scroll
 ## SavedVariables: ReagentBankUIDB
 
 ReagentBankUI.xml
