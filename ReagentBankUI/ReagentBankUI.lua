@@ -1818,7 +1818,7 @@ function RB:ApplyBankCountTransaction(transaction)
     -- showing pre-withdrawal bank counts until a different recipe was selected.
     self.tradeSkillBankCountsKey = nil
 
-    if TradeSkillFrame and TradeSkillFrame:IsShown() then
+    if (TradeSkillFrame and TradeSkillFrame:IsShown()) or self:GetActiveRecipeProvider() then
         self:UpdateTradeSkillControls()
     end
 end
@@ -3722,6 +3722,63 @@ function RB:ConfirmWithdrawPrompt()
     self:WithdrawItemExactFromPrompt(self.promptItem, amount)
 end
 
+-- Other addons with their own profession window (e.g. MillingUI) can borrow the
+-- profession sidebar. While the provider's frame is shown, the sidebar docks
+-- beside it and reads the selected recipe from the provider instead of the
+-- Blizzard trade skill API.
+--
+-- provider = {
+--     name = "Milling",                       -- prefetch key
+--     frame = MillingFrame,                   -- host window
+--     reagentButtons = { button, ... },       -- rows that get the "+N bank" overlay
+--     GetRecipe = function() return recipeName, { { itemEntry, name, requiredPerCraft }, ... } end,
+--                 -- or return nil, errText
+--     GetAllReagentEntries = function() return { itemEntry, ... } end,
+--     GetRepeatCount = function() return n end,        -- optional
+--     SetRepeatCount = function(n) end,                -- optional
+-- }
+function RB:RegisterRecipeProvider(provider)
+    if type(provider) ~= "table" or not provider.frame or not provider.GetRecipe then
+        return false
+    end
+
+    self.recipeProvider = provider
+
+    provider.frame:HookScript("OnShow", function()
+        RB:CreateTradeSkillControls()
+        RB:AttachTradeSkillControls()
+        RB:DockTradeSkillPanel()
+        RB:ResetProfessionBankPrefetch()
+        RB:PrefetchProfessionBankCounts(true)
+        -- Start from the saved prepare count and push it into the provider.
+        RB:SetTradeSkillPrepareCount(RB:GetTradeSkillRepeatCount(), true)
+    end)
+
+    provider.frame:HookScript("OnHide", function()
+        RB:AttachTradeSkillControls()
+        RB:ResetProfessionBankPrefetch()
+        RB:HideReagentBankOverlays()
+        RB:HandleTradeSkillClosed()
+    end)
+
+    return true
+end
+
+function RB:GetActiveRecipeProvider()
+    local provider = self.recipeProvider
+    if provider and provider.frame and provider.frame:IsShown() then
+        return provider
+    end
+    return nil
+end
+
+-- Providers call this when their selection or bags change.
+function RB:NotifyRecipeProviderChanged()
+    if self:GetActiveRecipeProvider() then
+        self:UpdateTradeSkillControls()
+    end
+end
+
 function RB:ClampTradeSkillPrepareCount(value)
     value = math.floor(tonumber(value) or 1)
 
@@ -3737,6 +3794,15 @@ function RB:ClampTradeSkillPrepareCount(value)
 end
 
 function RB:GetNativeTradeSkillRepeatCount()
+    local provider = self:GetActiveRecipeProvider()
+    if provider then
+        local value = provider.GetRepeatCount and tonumber(provider.GetRepeatCount())
+        if value and value > 0 then
+            return self:ClampTradeSkillPrepareCount(value)
+        end
+        return 1
+    end
+
     local input = _G.TradeSkillInputBox
     if input and input.GetNumber then
         local value = tonumber(input:GetNumber())
@@ -3802,6 +3868,14 @@ end
 function RB:SyncNativeTradeSkillRepeatCount(value)
     value = self:ClampTradeSkillPrepareCount(value)
 
+    local provider = self:GetActiveRecipeProvider()
+    if provider then
+        if provider.SetRepeatCount then
+            provider.SetRepeatCount(value)
+        end
+        return
+    end
+
     local input = _G.TradeSkillInputBox
     if not input then
         return
@@ -3818,7 +3892,37 @@ function RB:SyncNativeTradeSkillRepeatCount(value)
     self.suppressNativeTradeSkillQuantityChanged = nil
 end
 
+function RB:GetSelectedProviderReagents(provider)
+    local recipeName, recipeReagents = provider.GetRecipe()
+    if not recipeName then
+        return nil, recipeReagents or "Select a recipe first.", nil, nil
+    end
+
+    local reagents = {}
+    for _, reagent in ipairs(recipeReagents or {}) do
+        local itemEntry = tonumber(reagent.itemEntry)
+        local requiredPerCraft = tonumber(reagent.requiredPerCraft) or 0
+
+        if itemEntry and itemEntry > 0 and requiredPerCraft > 0 then
+            table.insert(reagents, {
+                itemEntry = itemEntry,
+                entry = itemEntry,
+                requiredPerCraft = requiredPerCraft,
+                bagCount = GetItemCount and (tonumber(GetItemCount(itemEntry, false)) or 0) or 0,
+                name = reagent.name or ("Item #" .. tostring(itemEntry)),
+            })
+        end
+    end
+
+    return reagents, nil, recipeName, self:GetTradeSkillRepeatCount()
+end
+
 function RB:GetSelectedTradeSkillReagents()
+    local provider = self:GetActiveRecipeProvider()
+    if provider then
+        return self:GetSelectedProviderReagents(provider)
+    end
+
     if not GetTradeSkillSelectionIndex or not GetTradeSkillInfo or not GetTradeSkillNumReagents or not GetTradeSkillReagentInfo then
         return nil, "The trade skill API is not available.", nil, nil
     end
@@ -4082,6 +4186,11 @@ function RB:ResetProfessionBankPrefetch()
 end
 
 function RB:BuildProfessionPrefetchKey()
+    local provider = self:GetActiveRecipeProvider()
+    if provider then
+        return "provider:" .. tostring(provider.name or "external")
+    end
+
     if not GetTradeSkillLine then
         return ""
     end
@@ -4095,6 +4204,24 @@ function RB:BuildProfessionPrefetchKey()
 end
 
 function RB:CollectProfessionReagentEntries()
+    local provider = self:GetActiveRecipeProvider()
+    if provider then
+        if not provider.GetAllReagentEntries then
+            return nil
+        end
+
+        local seen = {}
+        local entries = {}
+        for _, rawEntry in ipairs(provider.GetAllReagentEntries() or {}) do
+            local itemEntry = tonumber(rawEntry)
+            if itemEntry and itemEntry > 0 and not seen[itemEntry] then
+                seen[itemEntry] = true
+                table.insert(entries, math.floor(itemEntry))
+            end
+        end
+        return entries, #entries
+    end
+
     if not GetNumTradeSkills or not GetTradeSkillInfo or not GetTradeSkillNumReagents or not GetTradeSkillReagentItemLink then
         return nil
     end
@@ -4138,7 +4265,13 @@ function RB:PrefetchProfessionBankCounts(force)
         return
     end
 
-    local numSkills = GetNumTradeSkills and (GetNumTradeSkills() or 0) or 0
+    local numSkills = 0
+    if self:GetActiveRecipeProvider() then
+        -- A provider's list doesn't grow while it's open; one prefetch per show.
+        numSkills = tonumber(self.professionPrefetchSkillCount) or 0
+    elseif GetNumTradeSkills then
+        numSkills = GetNumTradeSkills() or 0
+    end
 
     if not force and self.professionPrefetchKey == key then
         local covered = tonumber(self.professionPrefetchSkillCount) or 0
@@ -4459,6 +4592,15 @@ function RB:SetReagentNameReserved(index, reserved)
 end
 
 function RB:HideReagentBankOverlays()
+    local provider = self.recipeProvider
+    if provider and type(provider.reagentButtons) == "table" then
+        for _, button in ipairs(provider.reagentButtons) do
+            if button.reagentBankOverlay then
+                button.reagentBankOverlay:Hide()
+            end
+        end
+    end
+
     if type(self.reagentBankOverlays) ~= "table" then
         return
     end
@@ -4468,6 +4610,40 @@ function RB:HideReagentBankOverlays()
             overlay:Hide()
         end
         self:SetReagentNameReserved(index, 0)
+    end
+end
+
+-- Same "+N bank" text as the trade skill rows, on a provider's reagent buttons.
+function RB:UpdateProviderReagentBankOverlays(provider)
+    local reagents = self:GetSelectedProviderReagents(provider)
+    local bankCounts = reagents and self:GetReagentBankCountsForOverlay(reagents) or nil
+
+    for index, button in ipairs(provider.reagentButtons or {}) do
+        local overlay = button.reagentBankOverlay
+        if not overlay and button.CreateFontString then
+            overlay = button:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+            overlay:SetPoint("RIGHT", button, "RIGHT", -2, 0)
+            overlay:SetJustifyH("RIGHT")
+            button.reagentBankOverlay = overlay
+        end
+
+        local reagent = reagents and reagents[index]
+        local itemEntry = reagent and math.floor(reagent.itemEntry)
+        local bankAmount = (bankCounts and itemEntry) and (tonumber(bankCounts[itemEntry]) or 0) or 0
+
+        if overlay and bankAmount > 0 then
+            local repeatCount = self:GetTradeSkillRepeatCount()
+            overlay:SetText("+" .. FormatCount(bankAmount) .. " bank")
+
+            if (reagent.bagCount or 0) + bankAmount >= reagent.requiredPerCraft * repeatCount then
+                overlay:SetTextColor(0.38, 0.86, 0.38)
+            else
+                overlay:SetTextColor(1.00, 0.55, 0.25)
+            end
+            overlay:Show()
+        elseif overlay then
+            overlay:Hide()
+        end
     end
 end
 
@@ -4512,6 +4688,12 @@ function RB:GetReagentBankCountsForOverlay(reagents)
 end
 
 function RB:UpdateReagentBankOverlays()
+    local provider = self:GetActiveRecipeProvider()
+    if provider then
+        self:UpdateProviderReagentBankOverlays(provider)
+        return
+    end
+
     if not _G.TradeSkillFrame or not _G.TradeSkillFrame:IsShown() then
         self:HideReagentBankOverlays()
         return
@@ -5876,13 +6058,34 @@ function RB:UpdateTradeSkillControls()
     self:UpdateReagentBankOverlays()
 end
 
+-- The sidebar sits on the Blizzard trade skill window or on a registered
+-- provider's window, whichever is open. It is only re-docked when its host
+-- changes, so a panel the player dragged stays put while that window is open.
+function RB:GetTradeSkillControlsHost()
+    local provider = self:GetActiveRecipeProvider()
+    return provider and provider.frame or _G.TradeSkillFrame
+end
+
+function RB:AttachTradeSkillControls()
+    local panel = self.tradeSkillPanel
+    local host = self:GetTradeSkillControlsHost()
+    if not panel or not host or panel:GetParent() == host then
+        return
+    end
+
+    panel:SetParent(host)
+    panel:SetFrameLevel((host:GetFrameLevel() or 1) + 5)
+    self:DockTradeSkillPanel()
+end
+
 function RB:CreateTradeSkillControls()
     if self.tradeSkillPanel then
+        self:AttachTradeSkillControls()
         self:UpdateTradeSkillControls()
         return
     end
 
-    local parent = _G.TradeSkillFrame
+    local parent = self:GetTradeSkillControlsHost()
     if not parent then
         return
     end
@@ -6201,7 +6404,7 @@ end
 
 function RB:DockTradeSkillPanel()
     local panel = self.tradeSkillPanel
-    local parent = _G.TradeSkillFrame
+    local parent = self:GetTradeSkillControlsHost()
     if not panel or not parent then
         return
     end
