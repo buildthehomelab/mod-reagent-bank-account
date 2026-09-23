@@ -20,7 +20,7 @@ This module adds a server-backed reagent bank for trade goods, gems, and craftin
 - Optional deposit preview confirmation
 - Reverse last deposit/withdraw transaction
 - Sort categories and items by several modes
-- Movable, scalable, skinnable addon window
+- Movable, scalable addon window built from the default Blizzard UI
 - Periodic auto-deposit timer
 - Character paperdoll launcher button
 

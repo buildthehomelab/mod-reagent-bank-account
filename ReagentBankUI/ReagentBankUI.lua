@@ -1,5 +1,5 @@
--- ReagentBankUI custom skin v19
--- WotLK 3.3.5a-safe: no Retail APIs, no Blizzard button templates in the main window.
+-- ReagentBankUI
+-- WotLK 3.3.5a-safe: no Retail APIs. Built from stock Blizzard frame templates.
 local ADDON_NAME = ...
 if not ADDON_NAME or ADDON_NAME == "" then
     ADDON_NAME = "ReagentBankUI"
@@ -37,13 +37,14 @@ for _, category in ipairs(CATEGORY_ORDER) do
     CATEGORY_BY_ID[category.id] = category
 end
 
-local BACKDROP = {
-    bgFile = "Interface\\ChatFrame\\ChatFrameBackground",
-    edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
+-- Stock Blizzard art, so the windows look like the rest of the default UI.
+local DIALOG_BACKDROP = {
+    bgFile = "Interface\\DialogFrame\\UI-DialogBox-Background",
+    edgeFile = "Interface\\DialogFrame\\UI-DialogBox-Border",
     tile = true,
-    tileSize = 16,
-    edgeSize = 14,
-    insets = { left = 4, right = 4, top = 4, bottom = 4 },
+    tileSize = 32,
+    edgeSize = 32,
+    insets = { left = 11, right = 12, top = 12, bottom = 11 },
 }
 
 local INSET_BACKDROP = {
@@ -51,394 +52,15 @@ local INSET_BACKDROP = {
     edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
     tile = true,
     tileSize = 16,
-    edgeSize = 12,
-    insets = { left = 3, right = 3, top = 3, bottom = 3 },
+    edgeSize = 16,
+    insets = { left = 4, right = 4, top = 4, bottom = 4 },
 }
 
-local PANEL_BACKDROP = {
-    bgFile = "Interface\\ChatFrame\\ChatFrameBackground",
-    edgeFile = "Interface\\Buttons\\WHITE8X8",
-    tile = true,
-    tileSize = 16,
-    edgeSize = 1,
-    insets = { left = 1, right = 1, top = 1, bottom = 1 },
-}
-
-local BUTTON_BACKDROP = {
-    bgFile = "Interface\\ChatFrame\\ChatFrameBackground",
-    edgeFile = "Interface\\Buttons\\WHITE8X8",
-    tile = true,
-    tileSize = 16,
-    edgeSize = 1,
-    insets = { left = 1, right = 1, top = 1, bottom = 1 },
-}
-
-local SKIN = {
-    windowBg = { 0.025, 0.028, 0.040, 0.98 },
-    windowBorder = { 0.72, 0.52, 0.24, 0.95 },
-    panelBg = { 0.045, 0.050, 0.070, 0.86 },
-    panelBorder = { 0.23, 0.26, 0.31, 1.00 },
-    headerBg = { 0.10, 0.075, 0.035, 0.95 },
-    headerLine = { 0.95, 0.72, 0.28, 0.82 },
-    buttonBg = { 0.105, 0.085, 0.050, 0.94 },
-    buttonBorder = { 0.58, 0.42, 0.18, 0.95 },
-    buttonHover = { 1.00, 0.78, 0.28, 0.18 },
-    buttonDown = { 0.045, 0.036, 0.025, 0.98 },
-    closeBg = { 0.22, 0.045, 0.035, 0.95 },
-    closeBorder = { 0.86, 0.30, 0.18, 0.95 },
-    rowOdd = { 0.070, 0.075, 0.095, 0.35 },
-    rowEven = { 0.030, 0.034, 0.048, 0.18 },
-    rowHover = { 1.00, 0.82, 0.32, 0.13 },
-    blueText = { 0.62, 0.78, 1.00 },
-    titleText = { 1.00, 0.82, 0.28 },
-    buttonText = { 1.00, 0.86, 0.46 },
-    mutedText = { 0.78, 0.82, 0.88 },
-    disabledText = { 0.55, 0.55, 0.55 },
-    disabledBorder = { 0.22, 0.22, 0.24, 0.90 },
-    inputBg = { 0.035, 0.038, 0.052, 0.96 },
-    inputText = { 1.00, 0.92, 0.70 },
-    rowFill = { 1.00, 0.72, 0.22, 0.12 },
-    listHeaderBg = { 0.11, 0.085, 0.045, 0.72 },
-    paperIcon = { 1.00, 1.00, 1.00, 1.00 },
-}
-
-local DEFAULT_COLOR_THEME = "classic_gold"
-local DEFAULT_FRAME_STYLE = "classic"
-
-local FRAME_STYLE_ORDER = { "classic", "elvui" }
-local FRAME_STYLES = {
-    classic = { label = "Classic" },
-    elvui = { label = "ElvUI" },
-}
-
-local SKIN_THEME_ORDER = {
-    "classic_gold",
-    "alliance_blue",
-    "horde_red",
-    "fel_green",
-    "ebon_slate",
-    "purple",
-    "ice",
-}
-
-local SKIN_THEMES = {
-    gold = {
-        label = "Gold",
-        windowBg = { 0.025, 0.028, 0.040, 0.98 },
-        windowBorder = { 0.72, 0.52, 0.24, 0.95 },
-        panelBg = { 0.045, 0.050, 0.070, 0.86 },
-        panelBorder = { 0.23, 0.26, 0.31, 1.00 },
-        headerBg = { 0.10, 0.075, 0.035, 0.95 },
-        headerLine = { 0.95, 0.72, 0.28, 0.82 },
-        buttonBg = { 0.105, 0.085, 0.050, 0.94 },
-        buttonBorder = { 0.58, 0.42, 0.18, 0.95 },
-        buttonHover = { 1.00, 0.78, 0.28, 0.18 },
-        buttonDown = { 0.045, 0.036, 0.025, 0.98 },
-        closeBg = { 0.22, 0.045, 0.035, 0.95 },
-        closeBorder = { 0.86, 0.30, 0.18, 0.95 },
-        rowOdd = { 0.070, 0.075, 0.095, 0.35 },
-        rowEven = { 0.030, 0.034, 0.048, 0.18 },
-        rowHover = { 1.00, 0.82, 0.32, 0.13 },
-        blueText = { 0.62, 0.78, 1.00 },
-        titleText = { 1.00, 0.82, 0.28 },
-        buttonText = { 1.00, 0.86, 0.46 },
-        mutedText = { 0.78, 0.82, 0.88 },
-        disabledText = { 0.55, 0.55, 0.55 },
-        disabledBorder = { 0.22, 0.22, 0.24, 0.90 },
-        inputBg = { 0.035, 0.038, 0.052, 0.96 },
-        inputText = { 1.00, 0.92, 0.70 },
-        rowFill = { 1.00, 0.72, 0.22, 0.12 },
-        listHeaderBg = { 0.11, 0.085, 0.045, 0.72 },
-        paperIcon = { 1.00, 1.00, 1.00, 1.00 },
-    },
-    arcane = {
-        label = "Arcane Blue",
-        windowBg = { 0.018, 0.026, 0.050, 0.98 },
-        windowBorder = { 0.28, 0.56, 0.96, 0.95 },
-        panelBg = { 0.030, 0.052, 0.090, 0.86 },
-        panelBorder = { 0.16, 0.28, 0.44, 1.00 },
-        headerBg = { 0.025, 0.055, 0.100, 0.95 },
-        headerLine = { 0.38, 0.72, 1.00, 0.82 },
-        buttonBg = { 0.035, 0.070, 0.120, 0.94 },
-        buttonBorder = { 0.26, 0.56, 0.98, 0.95 },
-        buttonHover = { 0.35, 0.75, 1.00, 0.20 },
-        buttonDown = { 0.016, 0.033, 0.060, 0.98 },
-        closeBg = { 0.18, 0.040, 0.060, 0.95 },
-        closeBorder = { 0.88, 0.24, 0.34, 0.95 },
-        rowOdd = { 0.045, 0.065, 0.105, 0.36 },
-        rowEven = { 0.020, 0.034, 0.062, 0.20 },
-        rowHover = { 0.35, 0.75, 1.00, 0.14 },
-        blueText = { 0.62, 0.84, 1.00 },
-        titleText = { 0.66, 0.86, 1.00 },
-        buttonText = { 0.78, 0.91, 1.00 },
-        mutedText = { 0.72, 0.82, 0.92 },
-        disabledText = { 0.48, 0.55, 0.62 },
-        disabledBorder = { 0.16, 0.20, 0.28, 0.90 },
-        inputBg = { 0.018, 0.032, 0.058, 0.96 },
-        inputText = { 0.80, 0.93, 1.00 },
-        rowFill = { 0.35, 0.75, 1.00, 0.13 },
-        listHeaderBg = { 0.025, 0.060, 0.105, 0.72 },
-        paperIcon = { 0.70, 0.88, 1.00, 1.00 },
-    },
-    emerald = {
-        label = "Emerald",
-        windowBg = { 0.018, 0.040, 0.030, 0.98 },
-        windowBorder = { 0.30, 0.82, 0.48, 0.95 },
-        panelBg = { 0.028, 0.066, 0.048, 0.86 },
-        panelBorder = { 0.14, 0.32, 0.22, 1.00 },
-        headerBg = { 0.025, 0.080, 0.048, 0.95 },
-        headerLine = { 0.42, 0.96, 0.58, 0.82 },
-        buttonBg = { 0.032, 0.088, 0.050, 0.94 },
-        buttonBorder = { 0.28, 0.74, 0.42, 0.95 },
-        buttonHover = { 0.40, 1.00, 0.58, 0.18 },
-        buttonDown = { 0.014, 0.044, 0.026, 0.98 },
-        closeBg = { 0.20, 0.045, 0.035, 0.95 },
-        closeBorder = { 0.86, 0.30, 0.18, 0.95 },
-        rowOdd = { 0.042, 0.082, 0.058, 0.36 },
-        rowEven = { 0.020, 0.044, 0.032, 0.20 },
-        rowHover = { 0.40, 1.00, 0.58, 0.13 },
-        blueText = { 0.66, 1.00, 0.78 },
-        titleText = { 0.66, 1.00, 0.62 },
-        buttonText = { 0.82, 1.00, 0.72 },
-        mutedText = { 0.72, 0.88, 0.78 },
-        disabledText = { 0.48, 0.58, 0.50 },
-        disabledBorder = { 0.16, 0.24, 0.18, 0.90 },
-        inputBg = { 0.018, 0.040, 0.028, 0.96 },
-        inputText = { 0.84, 1.00, 0.76 },
-        rowFill = { 0.42, 1.00, 0.58, 0.12 },
-        listHeaderBg = { 0.030, 0.080, 0.050, 0.72 },
-        paperIcon = { 0.74, 1.00, 0.78, 1.00 },
-    },
-    ruby = {
-        label = "Ruby",
-        windowBg = { 0.048, 0.018, 0.024, 0.98 },
-        windowBorder = { 0.92, 0.30, 0.30, 0.95 },
-        panelBg = { 0.078, 0.030, 0.038, 0.86 },
-        panelBorder = { 0.36, 0.16, 0.18, 1.00 },
-        headerBg = { 0.105, 0.030, 0.036, 0.95 },
-        headerLine = { 1.00, 0.42, 0.36, 0.82 },
-        buttonBg = { 0.112, 0.038, 0.044, 0.94 },
-        buttonBorder = { 0.86, 0.30, 0.26, 0.95 },
-        buttonHover = { 1.00, 0.40, 0.34, 0.18 },
-        buttonDown = { 0.058, 0.018, 0.022, 0.98 },
-        closeBg = { 0.28, 0.040, 0.034, 0.95 },
-        closeBorder = { 1.00, 0.42, 0.34, 0.95 },
-        rowOdd = { 0.090, 0.045, 0.050, 0.36 },
-        rowEven = { 0.050, 0.022, 0.028, 0.20 },
-        rowHover = { 1.00, 0.38, 0.34, 0.13 },
-        blueText = { 1.00, 0.62, 0.62 },
-        titleText = { 1.00, 0.64, 0.54 },
-        buttonText = { 1.00, 0.78, 0.66 },
-        mutedText = { 0.92, 0.72, 0.72 },
-        disabledText = { 0.62, 0.48, 0.48 },
-        disabledBorder = { 0.28, 0.16, 0.16, 0.90 },
-        inputBg = { 0.052, 0.022, 0.028, 0.96 },
-        inputText = { 1.00, 0.82, 0.72 },
-        rowFill = { 1.00, 0.42, 0.36, 0.12 },
-        listHeaderBg = { 0.105, 0.034, 0.038, 0.72 },
-        paperIcon = { 1.00, 0.72, 0.66, 1.00 },
-    },
-    violet = {
-        label = "Violet",
-        windowBg = { 0.036, 0.024, 0.056, 0.98 },
-        windowBorder = { 0.68, 0.42, 1.00, 0.95 },
-        panelBg = { 0.058, 0.040, 0.086, 0.86 },
-        panelBorder = { 0.28, 0.20, 0.40, 1.00 },
-        headerBg = { 0.075, 0.040, 0.115, 0.95 },
-        headerLine = { 0.78, 0.52, 1.00, 0.82 },
-        buttonBg = { 0.078, 0.046, 0.120, 0.94 },
-        buttonBorder = { 0.62, 0.36, 0.98, 0.95 },
-        buttonHover = { 0.78, 0.52, 1.00, 0.18 },
-        buttonDown = { 0.038, 0.022, 0.064, 0.98 },
-        closeBg = { 0.22, 0.045, 0.035, 0.95 },
-        closeBorder = { 0.86, 0.30, 0.18, 0.95 },
-        rowOdd = { 0.070, 0.052, 0.104, 0.36 },
-        rowEven = { 0.036, 0.026, 0.060, 0.20 },
-        rowHover = { 0.78, 0.52, 1.00, 0.13 },
-        blueText = { 0.86, 0.72, 1.00 },
-        titleText = { 0.86, 0.70, 1.00 },
-        buttonText = { 0.93, 0.84, 1.00 },
-        mutedText = { 0.82, 0.74, 0.90 },
-        disabledText = { 0.54, 0.48, 0.60 },
-        disabledBorder = { 0.22, 0.18, 0.28, 0.90 },
-        inputBg = { 0.038, 0.026, 0.060, 0.96 },
-        inputText = { 0.94, 0.86, 1.00 },
-        rowFill = { 0.78, 0.52, 1.00, 0.12 },
-        listHeaderBg = { 0.075, 0.045, 0.110, 0.72 },
-        paperIcon = { 0.90, 0.78, 1.00, 1.00 },
-    },
-    slate = {
-        label = "Dark Slate",
-        windowBg = { 0.026, 0.030, 0.034, 0.98 },
-        windowBorder = { 0.52, 0.62, 0.68, 0.95 },
-        panelBg = { 0.044, 0.050, 0.056, 0.86 },
-        panelBorder = { 0.24, 0.28, 0.32, 1.00 },
-        headerBg = { 0.048, 0.056, 0.064, 0.95 },
-        headerLine = { 0.68, 0.78, 0.84, 0.82 },
-        buttonBg = { 0.060, 0.068, 0.078, 0.94 },
-        buttonBorder = { 0.48, 0.58, 0.66, 0.95 },
-        buttonHover = { 0.72, 0.84, 0.92, 0.16 },
-        buttonDown = { 0.030, 0.034, 0.040, 0.98 },
-        closeBg = { 0.20, 0.045, 0.040, 0.95 },
-        closeBorder = { 0.84, 0.32, 0.22, 0.95 },
-        rowOdd = { 0.065, 0.072, 0.080, 0.35 },
-        rowEven = { 0.034, 0.038, 0.044, 0.18 },
-        rowHover = { 0.72, 0.84, 0.92, 0.12 },
-        blueText = { 0.78, 0.88, 0.94 },
-        titleText = { 0.84, 0.92, 0.96 },
-        buttonText = { 0.90, 0.95, 0.98 },
-        mutedText = { 0.74, 0.80, 0.84 },
-        disabledText = { 0.48, 0.52, 0.56 },
-        disabledBorder = { 0.20, 0.22, 0.24, 0.90 },
-        inputBg = { 0.034, 0.038, 0.044, 0.96 },
-        inputText = { 0.92, 0.96, 0.98 },
-        rowFill = { 0.72, 0.84, 0.92, 0.10 },
-        listHeaderBg = { 0.052, 0.060, 0.070, 0.72 },
-        paperIcon = { 0.88, 0.94, 0.98, 1.00 },
-    },
-}
-
-local function CopyColor(color)
-    if type(color) ~= "table" then
-        return color
-    end
-
-    return { color[1], color[2], color[3], color[4] }
-end
-
-local function CopyTheme(sourceKey, label, overrides)
-    local source = SKIN_THEMES[sourceKey] or SKIN_THEMES.gold
-    local theme = {}
-
-    for key, value in pairs(source) do
-        theme[key] = CopyColor(value)
-    end
-
-    theme.label = label or theme.label
-
-    for key, value in pairs(overrides or {}) do
-        theme[key] = CopyColor(value)
-    end
-
-    return theme
-end
-
-SKIN_THEMES.classic_gold = CopyTheme("gold", "Gold")
-SKIN_THEMES.alliance_blue = CopyTheme("arcane", "Blue")
-SKIN_THEMES.horde_red = CopyTheme("ruby", "Red")
-SKIN_THEMES.fel_green = CopyTheme("emerald", "Green")
-SKIN_THEMES.ebon_slate = CopyTheme("slate", "Slate")
-SKIN_THEMES.purple = CopyTheme("violet", "Purple")
-SKIN_THEMES.ice = CopyTheme("arcane", "Ice", {
-    windowBg = { 0.015, 0.034, 0.042, 0.98 },
-    windowBorder = { 0.50, 0.88, 1.00, 0.95 },
-    panelBg = { 0.025, 0.052, 0.064, 0.86 },
-    panelBorder = { 0.18, 0.42, 0.52, 1.00 },
-    headerLine = { 0.60, 0.94, 1.00, 0.82 },
-    titleText = { 0.72, 0.94, 1.00 },
-    buttonText = { 0.82, 0.96, 1.00 },
-    paperIcon = { 0.72, 0.94, 1.00, 1.00 },
-})
-SKIN_THEMES.elvui_dark = CopyTheme("slate", "ElvUI Dark", {
-    windowBg = { 0.018, 0.020, 0.024, 0.98 },
-    windowBorder = { 0.08, 0.10, 0.12, 0.95 },
-    panelBg = { 0.026, 0.030, 0.034, 0.88 },
-    panelBorder = { 0.10, 0.12, 0.14, 1.00 },
-    headerLine = { 0.35, 0.62, 0.92, 0.78 },
-})
-SKIN_THEMES.elvui_blue = CopyTheme("arcane", "Blue")
-SKIN_THEMES.elvui_purple = CopyTheme("violet", "Purple")
-SKIN_THEMES.elvui_green = CopyTheme("emerald", "Green")
-SKIN_THEMES.elvui_red = CopyTheme("ruby", "Red")
-SKIN_THEMES.elvui_ice = CopyTheme("arcane", "Ice", {
-    windowBg = { 0.015, 0.034, 0.042, 0.98 },
-    windowBorder = { 0.50, 0.88, 1.00, 0.95 },
-    panelBg = { 0.025, 0.052, 0.064, 0.86 },
-    panelBorder = { 0.18, 0.42, 0.52, 1.00 },
-    headerLine = { 0.60, 0.94, 1.00, 0.82 },
-    titleText = { 0.72, 0.94, 1.00 },
-    buttonText = { 0.82, 0.96, 1.00 },
-    paperIcon = { 0.72, 0.94, 1.00, 1.00 },
-})
-
-local SKIN_THEME_ALIASES = {
-    gold = "classic_gold",
-    classicgold = "classic_gold",
-    arcane = "alliance_blue",
-    emerald = "fel_green",
-    ruby = "horde_red",
-    violet = "purple",
-    slate = "ebon_slate",
-    alliance = "alliance_blue",
-    allianceblue = "alliance_blue",
-    horde = "horde_red",
-    hordered = "horde_red",
-    fel = "fel_green",
-    felgreen = "fel_green",
-    ebonslate = "ebon_slate",
-    slate = "ebon_slate",
-    blue = "alliance_blue",
-    red = "horde_red",
-    green = "fel_green",
-    purple = "purple",
-    ice = "ice",
-    elvuidark = "ebon_slate",
-    elvui_dark = "ebon_slate",
-    elvuiblue = "alliance_blue",
-    elvui_blue = "alliance_blue",
-    elvuipurple = "purple",
-    elvui_purple = "purple",
-    elvuigreen = "fel_green",
-    elvui_green = "fel_green",
-    elvuired = "horde_red",
-    elvui_red = "horde_red",
-    elvuiice = "ice",
-    elvui_ice = "ice",
-}
-
-local function NormalizeColorThemeKey(themeKey)
-    themeKey = string.lower(tostring(themeKey or DEFAULT_COLOR_THEME))
-    themeKey = SKIN_THEME_ALIASES[themeKey] or themeKey
-
-    if SKIN_THEMES[themeKey] then
-        return themeKey
-    end
-
-    return DEFAULT_COLOR_THEME
-end
-
-local function NormalizeFrameStyleKey(styleKey)
-    styleKey = string.lower(tostring(styleKey or DEFAULT_FRAME_STYLE))
-    if styleKey == "modern" or styleKey == "flat" then
-        styleKey = "elvui"
-    end
-    if FRAME_STYLES[styleKey] then
-        return styleKey
-    end
-    return DEFAULT_FRAME_STYLE
-end
-
-local function IsElvUIFrameStyle()
-    ReagentBankUIDB = ReagentBankUIDB or {}
-    return NormalizeFrameStyleKey(ReagentBankUIDB.frameStyle) == "elvui"
-end
-
-local function GetButtonBackdrop()
-    return IsElvUIFrameStyle() and BUTTON_BACKDROP or INSET_BACKDROP
-end
-
-local function ApplyColorThemeToSkin(themeKey)
-    themeKey = NormalizeColorThemeKey(themeKey)
-
-    local theme = SKIN_THEMES[themeKey] or SKIN_THEMES[DEFAULT_COLOR_THEME]
-    for key, value in pairs(theme) do
-        if key ~= "label" then
-            SKIN[key] = CopyColor(value)
-        end
-    end
-
-    return themeKey
-end
+local ROW_ODD_COLOR = { 1.00, 1.00, 1.00, 0.05 }
+local ROW_EVEN_COLOR = { 1.00, 1.00, 1.00, 0.02 }
+local ROW_FILL_COLOR = { 1.00, 0.82, 0.00, 0.12 }
+local LIST_HEADER_COLOR = { 1.00, 1.00, 1.00, 0.08 }
+local DIVIDER_COLOR = { 0.60, 0.60, 0.60, 0.35 }
 
 local DEFAULT_SCALE = 1.00
 local MAIN_FRAME_WIDTH = 740
@@ -478,7 +100,7 @@ local REAGENT_OVERLAY_GAP = 5
 -- extra line, so a badge that still will not fit is hidden instead.
 local REAGENT_NAME_MAX_RESERVE_RATIO = 0.42
 local PROFESSION_PANEL_WIDTH = 232
-local PROFESSION_PANEL_PADDING = 12
+local PROFESSION_PANEL_PADDING = 16
 local PROFESSION_PANEL_X = -33
 local PROFESSION_PANEL_Y = -12
 local PROFESSION_PANEL_NOTE_TOP = 216
@@ -510,8 +132,6 @@ local ROOT_PREVIEW_TOGGLE_BUTTON_WIDTH = 110
 local ROOT_SHOPPING_BUTTON_WIDTH = 110
 local ROOT_BUTTON_HEIGHT = 24
 local ROOT_BUTTON_GAP = 8
-local TOOLBAR_TOP = 55
-local TOOLBAR_HEIGHT = 62
 local LIST_COUNT_COLUMN_WIDTH = 158
 local LIST_COUNT_COLUMN_INSET = 8
 local LIST_COLUMN_SPLIT = LIST_COUNT_COLUMN_WIDTH + LIST_COUNT_COLUMN_INSET
@@ -1084,411 +704,21 @@ local function SetTextureColor(texture, color, alphaOverride)
     texture:SetVertexColor(color[1] or 1, color[2] or 1, color[3] or 1, alphaOverride or color[4] or 1)
 end
 
-local function SetFontColor(fontString, color)
-    if not fontString or type(color) ~= "table" then
-        return
-    end
-
-    fontString:SetTextColor(color[1] or 1, color[2] or 1, color[3] or 1, color[4] or 1)
-end
-
-local function SetFrameBackdropColors(frame, bgColor, borderColor, alphaOverride)
-    if not frame then
-        return
-    end
-
-    if frame.SetBackdropColor and type(bgColor) == "table" then
-        frame:SetBackdropColor(bgColor[1] or 0, bgColor[2] or 0, bgColor[3] or 0, alphaOverride or bgColor[4] or 1)
-    end
-
-    if frame.SetBackdropBorderColor and type(borderColor) == "table" then
-        frame:SetBackdropBorderColor(borderColor[1] or 1, borderColor[2] or 1, borderColor[3] or 1, borderColor[4] or 1)
-    end
-end
-
-function RB:GetColorThemeKey()
-    ReagentBankUIDB = ReagentBankUIDB or {}
-    ReagentBankUIDB.colorTheme = NormalizeColorThemeKey(ReagentBankUIDB.colorTheme)
-    return ReagentBankUIDB.colorTheme
-end
-
-function RB:GetFrameStyleKey()
-    ReagentBankUIDB = ReagentBankUIDB or {}
-    ReagentBankUIDB.frameStyle = NormalizeFrameStyleKey(ReagentBankUIDB.frameStyle)
-    return ReagentBankUIDB.frameStyle
-end
-
-function RB:GetColorThemeLabel(themeKey)
-    themeKey = NormalizeColorThemeKey(themeKey)
-    local theme = SKIN_THEMES[themeKey]
-    return theme and theme.label or "Gold"
-end
-
-function RB:ApplySavedColorTheme()
-    ReagentBankUIDB = ReagentBankUIDB or {}
-    ReagentBankUIDB.colorTheme = ApplyColorThemeToSkin(ReagentBankUIDB.colorTheme)
-    return ReagentBankUIDB.colorTheme
-end
-
-function RB:SetColorTheme(themeKey, silent)
-    ReagentBankUIDB = ReagentBankUIDB or {}
-    themeKey = ApplyColorThemeToSkin(themeKey)
-    ReagentBankUIDB.colorTheme = themeKey
-
-    self:ApplySkin()
-    self:UpdateColorSettingsFrame()
-
-    if not silent then
-        local label = self:GetColorThemeLabel(themeKey)
-        PrintAddon("color scheme set to " .. label .. ".")
-        self:Status("Color scheme set to " .. label .. ".", 0.82, 0.82, 0.82)
-    end
-end
-
-function RB:SetFrameStyle(styleKey, silent)
-    ReagentBankUIDB = ReagentBankUIDB or {}
-    styleKey = NormalizeFrameStyleKey(styleKey)
-    ReagentBankUIDB.frameStyle = styleKey
-
-    self:ApplySkin()
-    self:UpdateColorSettingsFrame()
-
-    if not silent then
-        local style = FRAME_STYLES[styleKey]
-        PrintAddon("frame style set to " .. ((style and style.label) or styleKey) .. ".")
-    end
-end
-
-function RB:CycleColorTheme()
-    local current = self:GetColorThemeKey()
-    local nextKey = SKIN_THEME_ORDER[1] or DEFAULT_COLOR_THEME
-
-    for index, themeKey in ipairs(SKIN_THEME_ORDER) do
-        if themeKey == current then
-            nextKey = SKIN_THEME_ORDER[index + 1] or SKIN_THEME_ORDER[1] or DEFAULT_COLOR_THEME
-            break
-        end
-    end
-
-    self:SetColorTheme(nextKey)
-end
-
-function RB:StyleButton(button)
-    if not button then
-        return
-    end
-
-    button:SetBackdrop(GetButtonBackdrop())
-    SetFrameBackdropColors(button, SKIN.buttonBg, SKIN.buttonBorder)
-
-    if button.shine then
-        SetTextureColor(button.shine, SKIN.headerLine, 0.15)
-    end
-
-    if button.hover then
-        SetTextureColor(button.hover, SKIN.buttonHover)
-    end
-
-    if button.label then
-        SetFontColor(button.label, SKIN.buttonText)
-    end
-end
-
-function RB:StyleCloseButton(button)
-    if not button then
-        return
-    end
-
-    button:SetBackdrop(GetButtonBackdrop())
-    SetFrameBackdropColors(button, SKIN.closeBg, SKIN.closeBorder)
-
-    if button.hover then
-        button.hover:SetVertexColor(1.00, 0.18, 0.12, 0.25)
-    end
-
-    if button.label then
-        button.label:SetTextColor(1.00, 0.76, 0.58)
-    end
-end
-
-function RB:StyleEditBox(box)
-    if not box then
-        return
-    end
-
-    box:SetBackdrop(GetButtonBackdrop())
-    SetFrameBackdropColors(box, SKIN.inputBg, SKIN.buttonBorder)
-    if box.SetTextColor then
-        box:SetTextColor(SKIN.inputText[1], SKIN.inputText[2], SKIN.inputText[3], SKIN.inputText[4] or 1)
-    end
-end
-
-function RB:StylePaperDollButton()
-    local button = self.paperDollButton
-    if not button then
-        return
-    end
-
-    if button.bg then
-        button.bg:SetVertexColor(SKIN.buttonBg[1], SKIN.buttonBg[2], SKIN.buttonBg[3], 0.95)
-    end
-
-    if button.icon then
-        SetTextureColor(button.icon, SKIN.paperIcon or { 1, 1, 1, 1 })
-    end
-
-    if button.border then
-        SetTextureColor(button.border, SKIN.windowBorder)
-    end
-
-    local highlight = button.GetHighlightTexture and button:GetHighlightTexture()
-    if highlight then
-        SetTextureColor(highlight, SKIN.buttonHover)
-    end
-end
-
-function RB:ApplySkin()
-    local f = self.frame
-
-    if f then
-        self:MakeBackdrop(f, 0.98)
-
-        if f.header then
-            f.header:SetBackdrop(IsElvUIFrameStyle() and PANEL_BACKDROP or BACKDROP)
-        end
-        SetFrameBackdropColors(f.header, SKIN.headerBg, SKIN.windowBorder)
-        SetTextureColor(f.headerGlow, SKIN.headerLine, 0.10)
-        SetTextureColor(f.headerLine, SKIN.headerLine)
-        SetTextureColor(f.toolbarBg, SKIN.panelBg, 0.42)
-        SetTextureColor(f.toolbarLine, SKIN.headerLine, 0.30)
-        SetFontColor(f.title, SKIN.titleText)
-        SetFontColor(f.modeText, SKIN.mutedText)
-
-        self:StyleCloseButton(f.close)
-
-        local buttons = {
-            f.rootDeposit, f.rootWithdraw, f.refresh, f.sortMode, f.shoppingList, f.previewToggle,
-            f.back, f.catDeposit, f.catWithdraw, f.prev, f.next,
-            f.withdrawOne, f.withdrawStack, f.withdrawItemAll, f.withdrawExact, f.detailBack,
-            f.addShopping, f.shoppingImportRecipe, f.shoppingPrint, f.shoppingClear,
-            f.shoppingPrev, f.shoppingNext,
-            f.shoppingPromptUpdate, f.shoppingPromptRemove, f.shoppingPromptCancel,
-            f.undoLast, f.quickWithdrawButton, f.quickWithdrawAll, f.quickWithdrawShopping, f.quickWithdrawCancel,
-        }
-
-        if f.depositPreview then
-            table.insert(buttons, f.depositPreview.confirm)
-            table.insert(buttons, f.depositPreview.cancel)
-        end
-
-        for _, button in ipairs(buttons) do
-            self:StyleButton(button)
-        end
-
-        self:StyleCloseButton(f.quickWithdrawClose)
-        if f.shoppingPrompt then
-            self:StyleCloseButton(f.shoppingPromptClose)
-        end
-        if f.depositPreview then
-            self:StyleCloseButton(f.depositPreview.close)
-        end
-
-        self:StyleEditBox(f.exactBox)
-        self:StyleEditBox(f.shoppingAmountBox)
-        self:StyleEditBox(f.shoppingPromptBox)
-        self:StyleEditBox(f.quickWithdrawBox)
-
-        self:MakeBackdrop(f.list, 0.78, true)
-        self:MakeBackdrop(f.detail, 0.78, true)
-        self:MakeBackdrop(f.footer, 0.58, true)
-        self:MakeBackdrop(f.quickWithdraw, 0.98, true)
-        if f.shoppingPrompt then
-            self:MakeBackdrop(f.shoppingPrompt, 0.98, true)
-        end
-        if f.depositPreview then
-            self:MakeBackdrop(f.depositPreview, 0.98, true)
-        end
-
-        if f.detailIconBorder then
-            f.detailIconBorder:SetBackdrop(GetButtonBackdrop())
-        end
-        SetFrameBackdropColors(f.detailIconBorder, { 0.02, 0.02, 0.03, 0.90 }, SKIN.buttonBorder)
-
-        if f.listHeader then
-            SetTextureColor(f.listHeader.bg, SKIN.listHeaderBg)
-            SetTextureColor(f.listHeader.line, SKIN.headerLine, 0.70)
-            SetTextureColor(f.listHeader.split, SKIN.headerLine, 0.30)
-        end
-
-        SetFontColor(f.headerName, SKIN.buttonText)
-        SetFontColor(f.headerCount, SKIN.buttonText)
-        SetFontColor(f.pageText, SKIN.mutedText)
-        SetFontColor(f.shoppingPageText, SKIN.mutedText)
-        SetFontColor(f.status, SKIN.mutedText)
-        SetFontColor(f.detailName, SKIN.titleText)
-        SetFontColor(f.detailHint, SKIN.mutedText)
-        SetFontColor(f.exactLabel, SKIN.buttonText)
-        SetFontColor(f.shoppingLabel, SKIN.buttonText)
-        SetFontColor(f.shoppingPromptTitle, SKIN.titleText)
-        SetFontColor(f.shoppingPromptName, SKIN.buttonText)
-        SetFontColor(f.shoppingPromptCurrent, SKIN.mutedText)
-        SetFontColor(f.shoppingPromptLabel, SKIN.buttonText)
-        SetFontColor(f.shoppingPromptHint, SKIN.mutedText)
-        SetFontColor(f.quickWithdrawTitle, SKIN.titleText)
-        SetFontColor(f.quickWithdrawName, SKIN.buttonText)
-        SetFontColor(f.quickWithdrawStored, SKIN.mutedText)
-        SetFontColor(f.quickWithdrawLabel, SKIN.buttonText)
-        SetFontColor(f.quickWithdrawHint, SKIN.mutedText)
-
-        if f.depositPreview then
-            SetFontColor(f.depositPreview.title, SKIN.titleText)
-            SetFontColor(f.depositPreview.summary, SKIN.mutedText)
-            if f.depositPreview.rows then
-                for _, row in ipairs(f.depositPreview.rows) do
-                    SetFontColor(row.name or row.text, SKIN.buttonText)
-                    SetFontColor(row.count, SKIN.blueText)
-                end
-            end
-        end
-
-        if f.rows then
-            for index, row in ipairs(f.rows) do
-                if (index % 2) == 0 then
-                    SetTextureColor(row.bg, SKIN.rowEven)
-                else
-                    SetTextureColor(row.bg, SKIN.rowOdd)
-                end
-                SetTextureColor(row.fill, SKIN.rowFill)
-                SetTextureColor(row.hover, SKIN.rowHover)
-                SetTextureColor(row.split, SKIN.headerLine, 0.18)
-                SetFontColor(row.count, SKIN.blueText)
-            end
-        end
-    end
-
-    if self.auctionShoppingFrame then
-        local auctionFrame = self.auctionShoppingFrame
-        self:MakeBackdrop(auctionFrame, 0.98, true)
-        self:StyleCloseButton(auctionFrame.close)
-        self:StyleButton(auctionFrame.prev)
-        self:StyleButton(auctionFrame.next)
-        self:StyleButton(auctionFrame.clear)
-        SetFontColor(auctionFrame.title, SKIN.titleText)
-        SetFontColor(auctionFrame.summary, SKIN.mutedText)
-        SetFontColor(auctionFrame.headerName, SKIN.buttonText)
-        SetFontColor(auctionFrame.headerCount, SKIN.buttonText)
-        SetFontColor(auctionFrame.pageText, SKIN.mutedText)
-        SetFontColor(auctionFrame.status, SKIN.mutedText)
-        if auctionFrame.header and auctionFrame.header.bg then
-            SetTextureColor(auctionFrame.header.bg, SKIN.listHeaderBg)
-        end
-        if auctionFrame.rows then
-            for index, row in ipairs(auctionFrame.rows) do
-                if (index % 2) == 0 then
-                    SetTextureColor(row.bg, SKIN.rowEven)
-                else
-                    SetTextureColor(row.bg, SKIN.rowOdd)
-                end
-                SetTextureColor(row.fill, SKIN.rowFill)
-                SetTextureColor(row.hover, SKIN.rowHover)
-                SetTextureColor(row.split, SKIN.headerLine, 0.18)
-                SetFontColor(row.count, SKIN.blueText)
-            end
-        end
-    end
-
-    self:StylePaperDollButton()
-
-    if self.tradeSkillButton then
-        self:StyleButton(self.tradeSkillButton)
-    end
-
-    if self.tradeSkillShoppingButton then
-        self:StyleButton(self.tradeSkillShoppingButton)
-    end
-
-    if self.tradeSkillMinusButton then
-        self:StyleButton(self.tradeSkillMinusButton)
-    end
-
-    if self.tradeSkillPresetButtons then
-        for _, presetButton in ipairs(self.tradeSkillPresetButtons) do
-            self:StyleButton(presetButton)
-        end
-    end
-
-    if self.tradeSkillPlusButton then
-        self:StyleButton(self.tradeSkillPlusButton)
-    end
-
-    if self.tradeSkillQuantityBox then
-        self:StyleEditBox(self.tradeSkillQuantityBox)
-    end
-
-    SetFontColor(self.tradeSkillQuantityLabel, SKIN.buttonText)
-    SetFontColor(self.tradeSkillStatsText, SKIN.mutedText)
-
-    self:ApplyProfessionPanelSkin()
-
-    if self.colorSettingsFrame then
-        local settings = self.colorSettingsFrame
-        self:MakeBackdrop(settings, 0.98, true)
-        SetFontColor(settings.title, SKIN.titleText)
-        SetFontColor(settings.note, SKIN.mutedText)
-        self:StyleCloseButton(settings.close)
-        if settings.styleButtons then
-            for _, button in ipairs(settings.styleButtons) do
-                self:StyleButton(button)
-            end
-        end
-        if settings.themeButtons then
-            for _, button in ipairs(settings.themeButtons) do
-                self:StyleButton(button)
-            end
-        end
-        self:StyleButton(settings.cycle)
-        self:StyleButton(settings.reset)
-        self:StyleButton(settings.resetWindow)
-        self:StyleButton(settings.scaleMinus)
-        self:StyleButton(settings.scalePlus)
-        self:StyleButton(settings.autoDepositApply)
-        self:StyleButton(settings.autoDepositOff)
-        self:StyleEditBox(settings.autoDepositIntervalBox)
-        SetFontColor(settings.styleHeader, SKIN.titleText)
-        SetFontColor(settings.themeHeader, SKIN.titleText)
-        SetFontColor(settings.scaleHeader, SKIN.titleText)
-        SetFontColor(settings.scaleValue, SKIN.mutedText)
-        SetFontColor(settings.autoDepositHeader, SKIN.titleText)
-        SetFontColor(settings.autoDepositNote, SKIN.mutedText)
-        SetFontColor(settings.autoDepositLabel, SKIN.mutedText)
-        SetFontColor(settings.autoDepositStatus, SKIN.mutedText)
-    end
-end
-
 function RB:MakeBackdrop(frame, alpha, panel)
-    if IsElvUIFrameStyle() then
-        frame:SetBackdrop(PANEL_BACKDROP)
-        if panel then
-            frame:SetBackdropColor(SKIN.panelBg[1], SKIN.panelBg[2], SKIN.panelBg[3], alpha or SKIN.panelBg[4])
-            frame:SetBackdropBorderColor(SKIN.panelBorder[1], SKIN.panelBorder[2], SKIN.panelBorder[3], SKIN.panelBorder[4])
-            return
-        end
-
-        frame:SetBackdropColor(SKIN.windowBg[1], SKIN.windowBg[2], SKIN.windowBg[3], alpha or SKIN.windowBg[4])
-        frame:SetBackdropBorderColor(SKIN.windowBorder[1], SKIN.windowBorder[2], SKIN.windowBorder[3], SKIN.windowBorder[4])
-        return
-    end
-
     if panel then
-        frame:SetBackdrop(BACKDROP)
-        frame:SetBackdropColor(SKIN.panelBg[1], SKIN.panelBg[2], SKIN.panelBg[3], alpha or SKIN.panelBg[4])
-        frame:SetBackdropBorderColor(SKIN.panelBorder[1], SKIN.panelBorder[2], SKIN.panelBorder[3], SKIN.panelBorder[4])
+        frame:SetBackdrop(INSET_BACKDROP)
+        frame:SetBackdropColor(0, 0, 0, alpha or 0.60)
+        frame:SetBackdropBorderColor(0.60, 0.60, 0.60, 1.00)
         return
     end
 
-    frame:SetBackdrop(BACKDROP)
-    frame:SetBackdropColor(SKIN.windowBg[1], SKIN.windowBg[2], SKIN.windowBg[3], alpha or SKIN.windowBg[4])
-    frame:SetBackdropBorderColor(SKIN.windowBorder[1], SKIN.windowBorder[2], SKIN.windowBorder[3], SKIN.windowBorder[4])
+    frame:SetBackdrop(DIALOG_BACKDROP)
+end
+
+function RB:StyleListRow(row, index)
+    SetTextureColor(row.bg, (index % 2) == 0 and ROW_EVEN_COLOR or ROW_ODD_COLOR)
+    SetTextureColor(row.fill, ROW_FILL_COLOR)
+    SetTextureColor(row.split, DIVIDER_COLOR)
 end
 
 function RB:SetButtonEnabled(button, enabled)
@@ -1498,22 +728,8 @@ function RB:SetButtonEnabled(button, enabled)
 
     if enabled then
         button:Enable()
-        button:SetAlpha(1.0)
-        if button.label then
-            SetFontColor(button.label, SKIN.buttonText)
-        end
-        if button.SetBackdropBorderColor then
-            button:SetBackdropBorderColor(SKIN.buttonBorder[1], SKIN.buttonBorder[2], SKIN.buttonBorder[3], SKIN.buttonBorder[4])
-        end
     else
         button:Disable()
-        button:SetAlpha(0.48)
-        if button.label then
-            SetFontColor(button.label, SKIN.disabledText)
-        end
-        if button.SetBackdropBorderColor then
-            button:SetBackdropBorderColor(SKIN.disabledBorder[1], SKIN.disabledBorder[2], SKIN.disabledBorder[3], SKIN.disabledBorder[4])
-        end
     end
 end
 
@@ -2049,17 +1265,17 @@ function RB:DisableAutoDepositTickerForProfessionWithdraw()
 end
 
 function RB:ApplyAutoDepositTickerBox(silent)
-    if not self.colorSettingsFrame or not self.colorSettingsFrame.autoDepositIntervalBox then
+    if not self.settingsPanel or not self.settingsPanel.autoDepositIntervalBox then
         return
     end
 
-    local text = Trim(self.colorSettingsFrame.autoDepositIntervalBox:GetText() or "")
+    local text = Trim(self.settingsPanel.autoDepositIntervalBox:GetText() or "")
     local seconds = tonumber(text) or 0
     self:SetAutoDepositTickerSeconds(seconds, silent)
 end
 
 function RB:ApplyAutoDepositTickerBinding()
-    if self.colorSettingsFrame and self.colorSettingsFrame:IsShown() and self.colorSettingsFrame.autoDepositIntervalBox then
+    if self.settingsPanel and self.settingsPanel:IsShown() and self.settingsPanel.autoDepositIntervalBox then
         self:ApplyAutoDepositTickerBox()
         return
     end
@@ -2089,7 +1305,7 @@ function ReagentBankUI_PeriodicAutoDepositOff()
 end
 
 function RB:UpdateAutoDepositTickerControls()
-    local frame = self.colorSettingsFrame
+    local frame = self.settingsPanel
     if not frame then
         return
     end
@@ -2753,38 +1969,38 @@ function RB:CreateAuctionShoppingFrame()
     frame:SetClampedToScreen(true)
     frame:EnableMouse(true)
     frame:SetFrameStrata("DIALOG")
-    self:MakeBackdrop(frame, 0.98, true)
+    self:MakeBackdrop(frame)
     frame:Hide()
 
     frame.title = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
-    frame.title:SetPoint("TOPLEFT", 12, -12)
+    frame.title:SetPoint("TOPLEFT", 16, -16)
     frame.title:SetPoint("RIGHT", -40, 0)
     frame.title:SetJustifyH("LEFT")
     frame.title:SetText("AH Shopping List")
     frame.title:SetTextColor(1.00, 0.82, 0.28)
 
     frame.close = self:CreateCloseButton(frame)
-    frame.close:SetPoint("TOPRIGHT", -8, -8)
+    frame.close:SetPoint("TOPRIGHT", -4, -4)
     frame.close:SetScript("OnClick", function()
         RB:HideAuctionShoppingFrame(true)
     end)
 
     frame.summary = frame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-    frame.summary:SetPoint("TOPLEFT", 12, -38)
-    frame.summary:SetPoint("RIGHT", -12, 0)
+    frame.summary:SetPoint("TOPLEFT", 16, -40)
+    frame.summary:SetPoint("RIGHT", -16, 0)
     frame.summary:SetJustifyH("LEFT")
     frame.summary:SetTextColor(0.78, 0.82, 0.88)
     frame.summary:SetText("")
 
     frame.header = CreateFrame("Frame", nil, frame)
     frame.header:SetHeight(22)
-    frame.header:SetPoint("TOPLEFT", 8, -62)
-    frame.header:SetPoint("RIGHT", -8, 0)
+    frame.header:SetPoint("TOPLEFT", 14, -62)
+    frame.header:SetPoint("RIGHT", -14, 0)
 
     frame.header.bg = frame.header:CreateTexture(nil, "BACKGROUND")
     frame.header.bg:SetTexture("Interface\\ChatFrame\\ChatFrameBackground")
     frame.header.bg:SetAllPoints(frame.header)
-    frame.header.bg:SetVertexColor(SKIN.listHeaderBg[1], SKIN.listHeaderBg[2], SKIN.listHeaderBg[3], 0.72)
+    SetTextureColor(frame.header.bg, LIST_HEADER_COLOR)
 
     frame.headerName = frame.header:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     frame.headerName:SetPoint("LEFT", 30, 0)
@@ -2801,8 +2017,8 @@ function RB:CreateAuctionShoppingFrame()
     for index = 1, AUCTION_SHOPPING_ROW_COUNT do
         local row = CreateFrame("Button", nil, frame, "ReagentBankUIListRowTemplate")
         row:SetHeight(ROW_HEIGHT)
-        row:SetPoint("LEFT", 8, 0)
-        row:SetPoint("RIGHT", -8, 0)
+        row:SetPoint("LEFT", 14, 0)
+        row:SetPoint("RIGHT", -14, 0)
 
         if index == 1 then
             row:SetPoint("TOP", frame.header, "BOTTOM", 0, -2)
@@ -2838,14 +2054,7 @@ function RB:CreateAuctionShoppingFrame()
         row.split:SetPoint("TOP", row, "TOPRIGHT", -89, -3)
         row.split:SetPoint("BOTTOM", row, "BOTTOMRIGHT", -89, 3)
 
-        if (index % 2) == 0 then
-            SetTextureColor(row.bg, SKIN.rowEven)
-        else
-            SetTextureColor(row.bg, SKIN.rowOdd)
-        end
-        SetTextureColor(row.fill, SKIN.rowFill)
-        SetTextureColor(row.hover, SKIN.rowHover)
-        SetFontColor(row.count, SKIN.blueText)
+        self:StyleListRow(row, index)
 
         row:RegisterForClicks("LeftButtonUp")
         row:SetScript("OnClick", function(selfRow)
@@ -2864,7 +2073,7 @@ function RB:CreateAuctionShoppingFrame()
     end
 
     frame.prev = self:CreateButton(frame, 70, 22, "Prev")
-    frame.prev:SetPoint("BOTTOMLEFT", 10, 34)
+    frame.prev:SetPoint("BOTTOMLEFT", 16, 36)
     frame.prev:SetScript("OnClick", function()
         local page = tonumber(frame.page) or 0
         if page > 0 then
@@ -2885,7 +2094,7 @@ function RB:CreateAuctionShoppingFrame()
     end)
 
     frame.clear = self:CreateButton(frame, 70, 22, "Clear")
-    frame.clear:SetPoint("BOTTOMRIGHT", -10, 34)
+    frame.clear:SetPoint("BOTTOMRIGHT", -16, 36)
     frame.clear:SetScript("OnClick", function()
         RB:ClearShoppingList()
     end)
@@ -2897,13 +2106,12 @@ function RB:CreateAuctionShoppingFrame()
     frame.pageText:SetText("")
 
     frame.status = frame:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
-    frame.status:SetPoint("BOTTOMLEFT", 10, 12)
-    frame.status:SetPoint("RIGHT", -10, 0)
+    frame.status:SetPoint("BOTTOMLEFT", 16, 18)
+    frame.status:SetPoint("RIGHT", -16, 0)
     frame.status:SetJustifyH("LEFT")
     frame.status:SetText("")
 
     self.auctionShoppingFrame = frame
-    self:ApplySkin()
     self:PositionAuctionShoppingFrame()
 end
 
@@ -5489,344 +4697,146 @@ function RB:PositionPaperDollButton()
     dock:Register("ReagentBankUI", self.paperDollButton, 20)
 end
 
-function RB:CreateColorSettingsFrame()
-    if self.colorSettingsFrame then
+-- Settings live in the standard Interface Options window, under AddOns.
+function RB:CreateSettingsPanel()
+    if self.settingsPanel then
         return
     end
 
-    local frame = CreateFrame("Frame", "ReagentBankUIColorSettingsFrame", UIParent)
-    frame:SetWidth(430)
-    frame:SetHeight(540)
-    frame:SetMovable(true)
-    frame:EnableMouse(true)
-    frame:SetClampedToScreen(true)
-    frame:RegisterForDrag("LeftButton")
-    frame:SetFrameStrata("DIALOG")
-    frame:SetScript("OnDragStart", function(selfFrame)
-        selfFrame:StartMoving()
-    end)
-    frame:SetScript("OnDragStop", function(selfFrame)
-        selfFrame:StopMovingOrSizing()
-        ReagentBankUIDB = ReagentBankUIDB or {}
-        local point, relativeTo, relativePoint, xOfs, yOfs = selfFrame:GetPoint(1)
-        ReagentBankUIDB.settingsPoint = {
-            point = point or "CENTER",
-            relativePoint = relativePoint or point or "CENTER",
-            x = xOfs or 0,
-            y = yOfs or 0,
-        }
-    end)
+    local panel = CreateFrame("Frame", "ReagentBankUISettingsPanel", UIParent)
+    panel.name = "Reagent Bank"
+    panel:Hide()
 
-    self:MakeBackdrop(frame, 0.98, true)
+    panel.title = panel:CreateFontString(nil, "ARTWORK", "GameFontNormalLarge")
+    panel.title:SetPoint("TOPLEFT", 16, -16)
+    panel.title:SetJustifyH("LEFT")
+    panel.title:SetText("Reagent Bank")
 
-    frame.title = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
-    frame.title:SetPoint("TOPLEFT", 16, -14)
-    frame.title:SetPoint("RIGHT", -46, 0)
-    frame.title:SetJustifyH("LEFT")
-    frame.title:SetText("Reagent Bank Settings")
-    frame.title:SetTextColor(SKIN.titleText[1], SKIN.titleText[2], SKIN.titleText[3], SKIN.titleText[4] or 1)
+    panel.note = panel:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
+    panel.note:SetPoint("TOPLEFT", panel.title, "BOTTOMLEFT", 0, -8)
+    panel.note:SetPoint("RIGHT", -32, 0)
+    panel.note:SetJustifyH("LEFT")
+    panel.note:SetText("Settings are saved per account.")
 
-    frame.close = self:CreateCloseButton(frame)
-    frame.close:SetPoint("TOPRIGHT", -8, -8)
-    frame.close:SetScript("OnClick", function()
-        RB:HideColorSettings()
-    end)
-
-    frame.note = frame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-    frame.note:SetPoint("TOPLEFT", 16, -44)
-    frame.note:SetPoint("RIGHT", -16, 0)
-    frame.note:SetJustifyH("LEFT")
-    frame.note:SetText("Settings are saved per account.")
-    frame.note:SetTextColor(SKIN.mutedText[1], SKIN.mutedText[2], SKIN.mutedText[3], SKIN.mutedText[4] or 1)
-
-    frame.styleHeader = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    frame.styleHeader:SetPoint("TOPLEFT", 18, -66)
-    frame.styleHeader:SetJustifyH("LEFT")
-    frame.styleHeader:SetText("Frame Style")
-    frame.styleHeader:SetTextColor(SKIN.titleText[1], SKIN.titleText[2], SKIN.titleText[3], SKIN.titleText[4] or 1)
-
-    frame.styleButtons = {}
-    local previousStyleButton
-    for index, styleKey in ipairs(FRAME_STYLE_ORDER) do
-        local style = FRAME_STYLES[styleKey]
-        local button = self:CreateButton(frame, 158, 26, style and style.label or styleKey)
-        button.styleKey = styleKey
-        if index == 1 then
-            button:SetPoint("TOPLEFT", frame.styleHeader, "BOTTOMLEFT", 0, -8)
-        else
-            button:SetPoint("LEFT", previousStyleButton, "RIGHT", 14, 0)
+    local slider = CreateFrame("Slider", "ReagentBankUIScaleSlider", panel, "OptionsSliderTemplate")
+    slider:SetPoint("TOPLEFT", panel.note, "BOTTOMLEFT", 2, -34)
+    slider:SetWidth(200)
+    slider:SetMinMaxValues(0.75, 1.20)
+    slider:SetValueStep(0.05)
+    _G[slider:GetName() .. "Low"]:SetText("75%")
+    _G[slider:GetName() .. "High"]:SetText("120%")
+    slider:SetScript("OnValueChanged", function(_, value)
+        if RB.updatingSettingsPanel then
+            return
         end
-        button:SetScript("OnClick", function(selfButton)
-            RB:SetFrameStyle(selfButton.styleKey)
-        end)
-        table.insert(frame.styleButtons, button)
-        previousStyleButton = button
-    end
+        RB:SetScaleValue(value, true)
+    end)
+    panel.scaleSlider = slider
+    panel.scaleText = _G[slider:GetName() .. "Text"]
 
-    frame.themeHeader = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    frame.themeHeader:SetPoint("TOPLEFT", frame.styleHeader, "BOTTOMLEFT", 0, -48)
-    frame.themeHeader:SetJustifyH("LEFT")
-    frame.themeHeader:SetText("Color Scheme")
-    frame.themeHeader:SetTextColor(SKIN.titleText[1], SKIN.titleText[2], SKIN.titleText[3], SKIN.titleText[4] or 1)
-
-    frame.themeButtons = {}
-
-    local columns = 2
-    local firstColumnX = 18
-    local columnGap = 200
-    local firstRowY = -144
-    local rowGap = 34
-    local buttonWidth = 158
-    local buttonHeight = 26
-
-    for index, themeKey in ipairs(SKIN_THEME_ORDER) do
-        local column = (index - 1) % columns
-        local row = math.floor((index - 1) / columns)
-        local columnX = firstColumnX + (column * columnGap)
-
-        local theme = SKIN_THEMES[themeKey]
-        local button = self:CreateButton(frame, buttonWidth, buttonHeight, theme and theme.label or themeKey)
-        button.themeKey = themeKey
-        button:SetPoint("TOPLEFT", columnX, firstRowY - (row * rowGap))
-        button:SetScript("OnClick", function(selfButton)
-            RB:SetColorTheme(selfButton.themeKey)
-        end)
-        button:SetScript("OnEnter", function(selfButton)
-            GameTooltip:SetOwner(selfButton, "ANCHOR_RIGHT")
-            GameTooltip:SetText("Color Scheme", 1, 0.82, 0)
-            GameTooltip:AddLine("Apply " .. RB:GetColorThemeLabel(selfButton.themeKey) .. ".", 1, 1, 1, true)
-            GameTooltip:Show()
-        end)
-        button:SetScript("OnLeave", HideTooltip)
-
-        table.insert(frame.themeButtons, button)
-    end
-
-    local themeRows = math.ceil(#SKIN_THEME_ORDER / columns)
-    local afterThemesY = firstRowY - (themeRows * rowGap) - 8
-
-    frame.scaleHeader = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    frame.scaleHeader:SetPoint("TOPLEFT", 18, afterThemesY)
-    frame.scaleHeader:SetJustifyH("LEFT")
-    frame.scaleHeader:SetText("Window Scale")
-    frame.scaleHeader:SetTextColor(SKIN.titleText[1], SKIN.titleText[2], SKIN.titleText[3], SKIN.titleText[4] or 1)
-
-    frame.scaleMinus = self:CreateButton(frame, 28, 24, "-")
-    frame.scaleMinus:SetPoint("TOPLEFT", frame.scaleHeader, "BOTTOMLEFT", 0, -8)
-    frame.scaleMinus:SetScript("OnClick", function()
-        RB:SetScaleValue((ReagentBankUIDB and ReagentBankUIDB.scale or DEFAULT_SCALE) - 0.05)
+    panel.resetWindow = self:CreateButton(panel, 128, 22, "Reset Window")
+    panel.resetWindow:SetPoint("LEFT", slider, "RIGHT", 24, 0)
+    panel.resetWindow:SetScript("OnClick", function()
+        RB:ResetWindowPosition()
     end)
 
-    frame.scaleValue = frame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-    frame.scaleValue:SetPoint("LEFT", frame.scaleMinus, "RIGHT", 8, 0)
-    frame.scaleValue:SetWidth(58)
-    frame.scaleValue:SetJustifyH("CENTER")
-    frame.scaleValue:SetTextColor(SKIN.mutedText[1], SKIN.mutedText[2], SKIN.mutedText[3], SKIN.mutedText[4] or 1)
+    panel.autoDepositHeader = panel:CreateFontString(nil, "ARTWORK", "GameFontNormal")
+    panel.autoDepositHeader:SetPoint("TOPLEFT", slider, "BOTTOMLEFT", -2, -34)
+    panel.autoDepositHeader:SetJustifyH("LEFT")
+    panel.autoDepositHeader:SetText("Periodic auto-deposit")
 
-    frame.scalePlus = self:CreateButton(frame, 28, 24, "+")
-    frame.scalePlus:SetPoint("LEFT", frame.scaleValue, "RIGHT", 8, 0)
-    frame.scalePlus:SetScript("OnClick", function()
-        RB:SetScaleValue((ReagentBankUIDB and ReagentBankUIDB.scale or DEFAULT_SCALE) + 0.05)
-    end)
+    panel.autoDepositNote = panel:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
+    panel.autoDepositNote:SetPoint("TOPLEFT", panel.autoDepositHeader, "BOTTOMLEFT", 0, -6)
+    panel.autoDepositNote:SetPoint("RIGHT", -32, 0)
+    panel.autoDepositNote:SetJustifyH("LEFT")
+    panel.autoDepositNote:SetText("Runs Deposit All on a timer while you are online. Enter 0 to disable. Minimum: 30 seconds.")
 
-    frame.autoDepositHeader = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    frame.autoDepositHeader:SetPoint("TOPLEFT", frame.scaleMinus, "BOTTOMLEFT", 0, -22)
-    frame.autoDepositHeader:SetJustifyH("LEFT")
-    frame.autoDepositHeader:SetText("Periodic auto-deposit")
-    frame.autoDepositHeader:SetTextColor(SKIN.titleText[1], SKIN.titleText[2], SKIN.titleText[3], SKIN.titleText[4] or 1)
+    panel.autoDepositLabel = panel:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
+    panel.autoDepositLabel:SetPoint("TOPLEFT", panel.autoDepositNote, "BOTTOMLEFT", 0, -16)
+    panel.autoDepositLabel:SetJustifyH("LEFT")
+    panel.autoDepositLabel:SetText("Every")
 
-    frame.autoDepositNote = frame:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
-    frame.autoDepositNote:SetPoint("TOPLEFT", frame.autoDepositHeader, "BOTTOMLEFT", 0, -6)
-    frame.autoDepositNote:SetPoint("RIGHT", -18, 0)
-    frame.autoDepositNote:SetJustifyH("LEFT")
-    frame.autoDepositNote:SetText("Runs Deposit All on a timer while you are online. Enter 0 to disable. Minimum: 30 seconds.")
-    frame.autoDepositNote:SetTextColor(SKIN.mutedText[1], SKIN.mutedText[2], SKIN.mutedText[3], SKIN.mutedText[4] or 1)
-
-    frame.autoDepositLabel = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    frame.autoDepositLabel:SetPoint("TOPLEFT", frame.autoDepositNote, "BOTTOMLEFT", 2, -14)
-    frame.autoDepositLabel:SetText("Every")
-    frame.autoDepositLabel:SetJustifyH("LEFT")
-    frame.autoDepositLabel:SetTextColor(SKIN.mutedText[1], SKIN.mutedText[2], SKIN.mutedText[3], SKIN.mutedText[4] or 1)
-
-    frame.autoDepositIntervalBox = self:CreateEditBox(frame, 66, 24)
-    frame.autoDepositIntervalBox:SetPoint("LEFT", frame.autoDepositLabel, "RIGHT", 10, 0)
-    frame.autoDepositIntervalBox:SetScript("OnEnterPressed", function(selfBox)
+    panel.autoDepositIntervalBox = self:CreateEditBox(panel, 66, 20)
+    panel.autoDepositIntervalBox:SetPoint("LEFT", panel.autoDepositLabel, "RIGHT", 12, 0)
+    panel.autoDepositIntervalBox:SetScript("OnEnterPressed", function(selfBox)
         RB:ApplyAutoDepositTickerBox()
         selfBox:ClearFocus()
     end)
-    frame.autoDepositIntervalBox:SetScript("OnEscapePressed", function(selfBox)
+    panel.autoDepositIntervalBox:SetScript("OnEscapePressed", function(selfBox)
         RB:UpdateAutoDepositTickerControls()
         selfBox:ClearFocus()
     end)
-    frame.autoDepositIntervalBox:SetScript("OnTextChanged", nil)
+    panel.autoDepositIntervalBox:SetScript("OnTextChanged", nil)
 
-    frame.autoDepositSecondsText = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    frame.autoDepositSecondsText:SetPoint("LEFT", frame.autoDepositIntervalBox, "RIGHT", 7, 0)
-    frame.autoDepositSecondsText:SetText("seconds")
-    frame.autoDepositSecondsText:SetJustifyH("LEFT")
-    frame.autoDepositSecondsText:SetTextColor(SKIN.mutedText[1], SKIN.mutedText[2], SKIN.mutedText[3], SKIN.mutedText[4] or 1)
+    panel.autoDepositSecondsText = panel:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
+    panel.autoDepositSecondsText:SetPoint("LEFT", panel.autoDepositIntervalBox, "RIGHT", 10, 0)
+    panel.autoDepositSecondsText:SetText("seconds")
 
-    frame.autoDepositApply = self:CreateButton(frame, 72, 24, "Apply")
-    frame.autoDepositApply:SetPoint("LEFT", frame.autoDepositSecondsText, "RIGHT", 12, 0)
-    frame.autoDepositApply:SetScript("OnClick", function()
+    panel.autoDepositApply = self:CreateButton(panel, 80, 22, "Apply")
+    panel.autoDepositApply:SetPoint("LEFT", panel.autoDepositSecondsText, "RIGHT", 12, 0)
+    panel.autoDepositApply:SetScript("OnClick", function()
         RB:ApplyAutoDepositTickerBox()
     end)
 
-    frame.autoDepositOff = self:CreateButton(frame, 72, 24, "Off")
-    frame.autoDepositOff:SetPoint("LEFT", frame.autoDepositApply, "RIGHT", 8, 0)
-    frame.autoDepositOff:SetScript("OnClick", function()
+    panel.autoDepositOff = self:CreateButton(panel, 80, 22, "Off")
+    panel.autoDepositOff:SetPoint("LEFT", panel.autoDepositApply, "RIGHT", 6, 0)
+    panel.autoDepositOff:SetScript("OnClick", function()
         RB:SetAutoDepositTickerSeconds(0)
     end)
 
-    frame.autoDepositStatus = frame:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
-    frame.autoDepositStatus:SetPoint("TOPLEFT", frame.autoDepositLabel, "BOTTOMLEFT", 0, -28)
-    frame.autoDepositStatus:SetPoint("RIGHT", -18, 0)
-    frame.autoDepositStatus:SetJustifyH("LEFT")
-    frame.autoDepositStatus:SetText("")
-    frame.autoDepositStatus:SetTextColor(SKIN.mutedText[1], SKIN.mutedText[2], SKIN.mutedText[3], SKIN.mutedText[4] or 1)
+    panel.autoDepositStatus = panel:CreateFontString(nil, "ARTWORK", "GameFontDisableSmall")
+    panel.autoDepositStatus:SetPoint("TOPLEFT", panel.autoDepositLabel, "BOTTOMLEFT", 0, -16)
+    panel.autoDepositStatus:SetPoint("RIGHT", -32, 0)
+    panel.autoDepositStatus:SetJustifyH("LEFT")
+    panel.autoDepositStatus:SetText("")
 
-    frame.cycle = self:CreateButton(frame, 112, 26, "Cycle")
-    frame.cycle:SetPoint("BOTTOMLEFT", 18, 16)
-    frame.cycle:SetScript("OnClick", function()
-        RB:CycleColorTheme()
+    panel:SetScript("OnShow", function()
+        RB:UpdateSettingsPanel()
     end)
 
-    frame.reset = self:CreateButton(frame, 128, 26, "Reset Style")
-    frame.reset:SetPoint("LEFT", frame.cycle, "RIGHT", 12, 0)
-    frame.reset:SetScript("OnClick", function()
-        RB:SetFrameStyle(DEFAULT_FRAME_STYLE, true)
-        RB:SetColorTheme(DEFAULT_COLOR_THEME)
-    end)
-
-    frame.resetWindow = self:CreateButton(frame, 128, 26, "Reset Window")
-    frame.resetWindow:SetPoint("LEFT", frame.reset, "RIGHT", 12, 0)
-    frame.resetWindow:SetScript("OnClick", function()
-        ReagentBankUIDB = ReagentBankUIDB or {}
-        ReagentBankUIDB.point = nil
-        ReagentBankUIDB.relativePoint = nil
-        ReagentBankUIDB.xOfs = nil
-        ReagentBankUIDB.yOfs = nil
-        RB:SetScaleValue(DEFAULT_SCALE, true)
-        if RB.frame then
-            RB.frame:ClearAllPoints()
-            RB.frame:SetPoint("CENTER", UIParent, "CENTER", 0, 0)
-        end
-        RB:Status("Window position and scale reset.", 0.82, 0.82, 0.82)
-    end)
-
-    self.colorSettingsFrame = frame
-    self:ApplySkin()
-    self:UpdateColorSettingsFrame()
-
-    frame:Hide()
+    self.settingsPanel = panel
+    InterfaceOptions_AddCategory(panel)
 end
 
-function RB:UpdateColorSettingsFrame()
-    local frame = self.colorSettingsFrame
-    if not frame then
+function RB:UpdateSettingsPanel()
+    local panel = self.settingsPanel
+    if not panel then
         return
     end
 
-    local selected = self:GetColorThemeKey()
-    local selectedStyle = self:GetFrameStyleKey()
+    ReagentBankUIDB = ReagentBankUIDB or {}
+    local scale = Clamp(ReagentBankUIDB.scale or DEFAULT_SCALE, 0.75, 1.20)
 
-    if frame.styleButtons then
-        for _, button in ipairs(frame.styleButtons) do
-            local style = FRAME_STYLES[button.styleKey]
-            local label = style and style.label or button.styleKey
-            if button.styleKey == selectedStyle then
-                button:SetText("* " .. label)
-                if button.SetBackdropBorderColor then
-                    button:SetBackdropBorderColor(SKIN.headerLine[1], SKIN.headerLine[2], SKIN.headerLine[3], SKIN.headerLine[4])
-                end
-            else
-                button:SetText(label)
-                if button.SetBackdropBorderColor then
-                    button:SetBackdropBorderColor(SKIN.buttonBorder[1], SKIN.buttonBorder[2], SKIN.buttonBorder[3], SKIN.buttonBorder[4])
-                end
-            end
-        end
-    end
-
-    if frame.themeButtons then
-        for _, button in ipairs(frame.themeButtons) do
-            local themeKey = button.themeKey
-            local label = self:GetColorThemeLabel(themeKey)
-
-            if themeKey == selected then
-                button:SetText("* " .. label)
-                if button.SetBackdropBorderColor then
-                    button:SetBackdropBorderColor(SKIN.headerLine[1], SKIN.headerLine[2], SKIN.headerLine[3], SKIN.headerLine[4])
-                end
-            else
-                button:SetText(label)
-                if button.SetBackdropBorderColor then
-                    button:SetBackdropBorderColor(SKIN.buttonBorder[1], SKIN.buttonBorder[2], SKIN.buttonBorder[3], SKIN.buttonBorder[4])
-                end
-            end
-        end
-    end
-
-    if frame.cycle then
-        frame.cycle:SetText("Cycle")
-    end
-
-    if frame.reset then
-        frame.reset:SetText("Reset Style")
-    end
-
-    if frame.scaleValue then
-        ReagentBankUIDB = ReagentBankUIDB or {}
-        local scale = Clamp(ReagentBankUIDB.scale or DEFAULT_SCALE, 0.75, 1.20)
-        frame.scaleValue:SetText(tostring(math.floor((scale * 100) + 0.5)) .. "%")
-    end
+    self.updatingSettingsPanel = true
+    panel.scaleSlider:SetValue(scale)
+    self.updatingSettingsPanel = nil
+    panel.scaleText:SetText("Window Scale: " .. tostring(math.floor((scale * 100) + 0.5)) .. "%")
 
     self:UpdateAutoDepositTickerControls()
 end
 
-function RB:ShowColorSettings()
-    self:ApplySavedColorTheme()
-    self:CreateColorSettingsFrame()
+function RB:OpenSettings()
+    self:CreateSettingsPanel()
 
-    local frame = self.colorSettingsFrame
-    frame:ClearAllPoints()
+    -- The 3.3.5 options frame ignores the category the first time it opens,
+    -- so it is asked twice.
+    InterfaceOptionsFrame_OpenToCategory(self.settingsPanel)
+    InterfaceOptionsFrame_OpenToCategory(self.settingsPanel)
+end
 
+function RB:ResetWindowPosition()
     ReagentBankUIDB = ReagentBankUIDB or {}
-    if ReagentBankUIDB.settingsPoint and ReagentBankUIDB.settingsPoint.point then
-        frame:SetPoint(
-            ReagentBankUIDB.settingsPoint.point,
-            UIParent,
-            ReagentBankUIDB.settingsPoint.relativePoint or ReagentBankUIDB.settingsPoint.point,
-            ReagentBankUIDB.settingsPoint.x or 0,
-            ReagentBankUIDB.settingsPoint.y or 0
-        )
-    elseif self.paperDollButton and self.paperDollButton:IsShown() then
-        frame:SetPoint("TOPLEFT", self.paperDollButton, "BOTTOMLEFT", -14, -10)
-    else
-        frame:SetPoint("CENTER", UIParent, "CENTER", 0, 0)
+    ReagentBankUIDB.point = nil
+    ReagentBankUIDB.relativePoint = nil
+    ReagentBankUIDB.xOfs = nil
+    ReagentBankUIDB.yOfs = nil
+    self:SetScaleValue(DEFAULT_SCALE, true)
+    if self.frame then
+        self.frame:ClearAllPoints()
+        self.frame:SetPoint("CENTER", UIParent, "CENTER", 0, 0)
     end
-
-    frame:Show()
-    frame:SetFrameLevel(200)
-    self:UpdateColorSettingsFrame()
+    self:Status("Window position and scale reset.", 0.82, 0.82, 0.82)
 end
-
-function RB:HideColorSettings()
-    if self.colorSettingsFrame then
-        self.colorSettingsFrame:Hide()
-    end
-end
-
-function RB:ToggleColorSettings()
-    self:CreateColorSettingsFrame()
-
-    if self.colorSettingsFrame:IsShown() then
-        self:HideColorSettings()
-    else
-        self:ShowColorSettings()
-    end
-end
-
 function RB:CreatePaperDollButton()
     if self.paperDollButton or not PAPERDOLL_BUTTON_ENABLED then
         return
@@ -5906,7 +4916,7 @@ function RB:CreatePaperDollButton()
 
     button:SetScript("OnClick", function(selfButton, mouseButton)
         if IsControlKeyDown and IsControlKeyDown() then
-            RB:ToggleColorSettings()
+            RB:OpenSettings()
             return
         end
 
@@ -5932,7 +4942,6 @@ function RB:CreatePaperDollButton()
     button:SetScript("OnLeave", HideTooltip)
 
     self.paperDollButton = button
-    self:StylePaperDollButton()
     self:PositionPaperDollButton()
 
     -- If the AH button addon loads after this addon, retry for a few seconds
@@ -6130,21 +5139,19 @@ function RB:CreateTradeSkillControls()
     panel:SetScript("OnDragStop", function(selfPanel)
         selfPanel:StopMovingOrSizing()
     end)
-    self:MakeBackdrop(panel, 0.96)
+    self:MakeBackdrop(panel)
     self.tradeSkillPanel = panel
 
     local inset = PROFESSION_PANEL_PADDING
     local contentWidth = PROFESSION_PANEL_WIDTH - (inset * 2)
 
     panel.title = panel:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    panel.title:SetPoint("TOPLEFT", inset, -12)
+    panel.title:SetPoint("TOPLEFT", inset, -16)
     panel.title:SetJustifyH("LEFT")
     panel.title:SetText("Reagent Bank")
 
     panel.close = self:CreateCloseButton(panel)
-    panel.close:SetWidth(20)
-    panel.close:SetHeight(20)
-    panel.close:SetPoint("TOPRIGHT", -8, -7)
+    panel.close:SetPoint("TOPRIGHT", -4, -4)
     panel.close:SetScript("OnClick", function()
         panel:Hide()
     end)
@@ -6158,9 +5165,10 @@ function RB:CreateTradeSkillControls()
 
     panel.titleLine = panel:CreateTexture(nil, "ARTWORK")
     panel.titleLine:SetTexture("Interface\\ChatFrame\\ChatFrameBackground")
-    panel.titleLine:SetPoint("TOPLEFT", inset, -31)
-    panel.titleLine:SetPoint("TOPRIGHT", -inset, -31)
+    panel.titleLine:SetPoint("TOPLEFT", inset, -34)
+    panel.titleLine:SetPoint("TOPRIGHT", -inset, -34)
     panel.titleLine:SetHeight(1)
+    SetTextureColor(panel.titleLine, DIVIDER_COLOR)
 
     local quantityLabel = panel:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     quantityLabel:SetPoint("LEFT", panel, "TOPLEFT", inset, -52)
@@ -6181,16 +5189,13 @@ function RB:CreateTradeSkillControls()
     plusButton:SetScript("OnLeave", HideTooltip)
     self.tradeSkillPlusButton = plusButton
 
-    local quantityBox = CreateFrame("EditBox", "ReagentBankUIPrepareCountBox", panel)
-    quantityBox:SetWidth(48)
-    quantityBox:SetHeight(22)
+    local quantityBox = CreateFrame("EditBox", "ReagentBankUIPrepareCountBox", panel, "InputBoxTemplate")
+    quantityBox:SetWidth(40)
+    quantityBox:SetHeight(20)
     quantityBox:SetAutoFocus(false)
     quantityBox:SetNumeric(true)
     quantityBox:SetJustifyH("CENTER")
-    quantityBox:SetFontObject(ChatFontNormal)
-    quantityBox:SetTextInsets(4, 4, 0, 0)
-    quantityBox:SetPoint("RIGHT", plusButton, "LEFT", -4, 0)
-    self:StyleEditBox(quantityBox)
+    quantityBox:SetPoint("RIGHT", plusButton, "LEFT", -8, 0)
     quantityBox:SetScript("OnEscapePressed", function(selfBox)
         RB:NormalizeTradeSkillQuantityBox(false)
         selfBox:ClearFocus()
@@ -6226,7 +5231,7 @@ function RB:CreateTradeSkillControls()
     self.tradeSkillQuantityBox = quantityBox
 
     local minusButton = self:CreateButton(panel, 22, 22, "-")
-    minusButton:SetPoint("RIGHT", quantityBox, "LEFT", -4, 0)
+    minusButton:SetPoint("RIGHT", quantityBox, "LEFT", -8, 0)
     minusButton:SetScript("OnClick", function()
         RB:SetTradeSkillPrepareCount(RB:GetTradeSkillRepeatCount() - 1, true)
     end)
@@ -6362,6 +5367,7 @@ function RB:CreateTradeSkillControls()
     panel.statsLine:SetPoint("TOPLEFT", inset, -182)
     panel.statsLine:SetPoint("TOPRIGHT", -inset, -182)
     panel.statsLine:SetHeight(1)
+    SetTextureColor(panel.statsLine, DIVIDER_COLOR)
 
     panel.craftValue = panel:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
     panel.craftValue:SetPoint("TOPLEFT", inset, -192)
@@ -6418,7 +5424,6 @@ function RB:CreateTradeSkillControls()
         self.tradeSkillNativeInputHooked = true
     end
 
-    self:ApplyProfessionPanelSkin()
     self:UpdateTradeSkillControls()
 end
 
@@ -6432,24 +5437,6 @@ function RB:DockTradeSkillPanel()
     panel:ClearAllPoints()
     panel:SetPoint("TOPLEFT", parent, "TOPRIGHT", PROFESSION_PANEL_X, PROFESSION_PANEL_Y)
     panel:Show()
-end
-
-function RB:ApplyProfessionPanelSkin()
-    local panel = self.tradeSkillPanel
-    if not panel then
-        return
-    end
-
-    self:MakeBackdrop(panel, 0.96)
-    SetFontColor(panel.title, SKIN.titleText)
-    SetTextureColor(panel.titleLine, SKIN.headerLine, 0.75)
-    SetTextureColor(panel.statsLine, SKIN.headerLine, 0.45)
-    SetFontColor(panel.craftLabel, SKIN.mutedText)
-    SetFontColor(panel.craftNote, SKIN.mutedText)
-    SetFontColor(panel.checkText, SKIN.buttonText)
-    if panel.close then
-        self:StyleCloseButton(panel.close)
-    end
 end
 
 function RB:ApplyScale()
@@ -6468,68 +5455,38 @@ function RB:SetScaleValue(scale, silent)
     ReagentBankUIDB = ReagentBankUIDB or {}
     ReagentBankUIDB.scale = Clamp(tonumber(scale) or DEFAULT_SCALE, 0.75, 1.20)
     self:ApplyScale()
-    self:UpdateColorSettingsFrame()
+    self:UpdateSettingsPanel()
 
     if not silent then
         DEFAULT_CHAT_FRAME:AddMessage(string.format("|cff33ff99ReagentBankUI|r scale set to %.2f", ReagentBankUIDB.scale))
     end
 end
 
+-- Blizzard templates name their child regions after the nearest named
+-- parent, so every templated widget gets a unique name of its own.
+local widgetCount = 0
+
+local function NextWidgetName(kind)
+    widgetCount = widgetCount + 1
+    return "ReagentBankUI" .. kind .. widgetCount
+end
+
 function RB:CreateButton(parent, width, height, label)
-    local button = CreateFrame("Button", nil, parent, "ReagentBankUIButtonTemplate")
+    local button = CreateFrame("Button", NextWidgetName("Button"), parent, "UIPanelButtonTemplate")
     button:SetWidth(width)
     button:SetHeight(height)
-    button:SetBackdrop(GetButtonBackdrop())
-    button:SetBackdropColor(SKIN.buttonBg[1], SKIN.buttonBg[2], SKIN.buttonBg[3], SKIN.buttonBg[4])
-    button:SetBackdropBorderColor(SKIN.buttonBorder[1], SKIN.buttonBorder[2], SKIN.buttonBorder[3], SKIN.buttonBorder[4])
-
-    if button.hover then
-        button:SetHighlightTexture(button.hover)
-    end
-
-    if button.label then
-        button.label:SetText(label or "")
-        button:SetFontString(button.label)
-    end
-
     button:SetText(label or "")
-    self:StyleButton(button)
-
-    button:SetScript("OnMouseDown", function(selfButton)
-        if not selfButton:IsEnabled() then
-            return
-        end
-
-        selfButton:SetBackdropColor(SKIN.buttonDown[1], SKIN.buttonDown[2], SKIN.buttonDown[3], SKIN.buttonDown[4])
-        if selfButton.label then
-            selfButton.label:ClearAllPoints()
-            selfButton.label:SetPoint("CENTER", selfButton, "CENTER", 1, -1)
-        end
-    end)
-
-    button:SetScript("OnMouseUp", function(selfButton)
-        selfButton:SetBackdropColor(SKIN.buttonBg[1], SKIN.buttonBg[2], SKIN.buttonBg[3], SKIN.buttonBg[4])
-        if selfButton.label then
-            selfButton.label:ClearAllPoints()
-            selfButton.label:SetPoint("CENTER", selfButton, "CENTER", 0, 0)
-        end
-    end)
-
     return button
 end
 
+-- InputBoxTemplate draws its border 5px outside the box on each side, so the
+-- box itself is narrowed to keep the old footprint.
 function RB:CreateEditBox(parent, width, height)
-    local box = CreateFrame("EditBox", nil, parent, "ReagentBankUIEditBoxTemplate")
-    box:SetWidth(width)
-    box:SetHeight(height)
+    local box = CreateFrame("EditBox", NextWidgetName("EditBox"), parent, "InputBoxTemplate")
+    box:SetWidth(width - 10)
+    box:SetHeight(20)
     box:SetAutoFocus(false)
     box:SetNumeric(true)
-    box:SetFontObject(ChatFontNormal)
-    box:SetTextInsets(6, 6, 0, 0)
-    box:SetBackdrop(GetButtonBackdrop())
-    box:SetBackdropColor(SKIN.inputBg[1], SKIN.inputBg[2], SKIN.inputBg[3], SKIN.inputBg[4])
-    box:SetBackdropBorderColor(SKIN.buttonBorder[1], SKIN.buttonBorder[2], SKIN.buttonBorder[3], SKIN.buttonBorder[4])
-    box:SetTextColor(SKIN.inputText[1], SKIN.inputText[2], SKIN.inputText[3], SKIN.inputText[4] or 1)
     box:SetScript("OnEscapePressed", function(selfBox)
         selfBox:ClearFocus()
     end)
@@ -6545,39 +5502,7 @@ function RB:CreateEditBox(parent, width, height)
 end
 
 function RB:CreateCloseButton(parent)
-    local button = CreateFrame("Button", nil, parent, "ReagentBankUICloseButtonTemplate")
-    button:SetWidth(24)
-    button:SetHeight(24)
-    button:SetBackdrop(GetButtonBackdrop())
-    button:SetBackdropColor(SKIN.closeBg[1], SKIN.closeBg[2], SKIN.closeBg[3], SKIN.closeBg[4])
-    button:SetBackdropBorderColor(SKIN.closeBorder[1], SKIN.closeBorder[2], SKIN.closeBorder[3], SKIN.closeBorder[4])
-
-    if button.hover then
-        button:SetHighlightTexture(button.hover)
-    end
-
-    if button.label then
-        button.label:SetText("X")
-        button.label:SetFont(STANDARD_TEXT_FONT, 14, "OUTLINE")
-    end
-
-    self:StyleCloseButton(button)
-
-    button:SetScript("OnMouseDown", function(selfButton)
-        if selfButton.label then
-            selfButton.label:ClearAllPoints()
-            selfButton.label:SetPoint("CENTER", selfButton, "CENTER", 1, 0)
-        end
-    end)
-
-    button:SetScript("OnMouseUp", function(selfButton)
-        if selfButton.label then
-            selfButton.label:ClearAllPoints()
-            selfButton.label:SetPoint("CENTER", selfButton, "CENTER", 0, 1)
-        end
-    end)
-
-    return button
+    return CreateFrame("Button", NextWidgetName("CloseButton"), parent, "UIPanelCloseButton")
 end
 
 function RB:CreateLabel(parent, text, template)
@@ -6615,69 +5540,29 @@ function RB:CreateFrame()
         ReagentBankUIDB.yOfs = yOfs
     end)
 
-    f.shadow = f:CreateTexture(nil, "BACKGROUND")
-    f.shadow:SetTexture("Interface\\ChatFrame\\ChatFrameBackground")
-    f.shadow:SetPoint("TOPLEFT", -6, 6)
-    f.shadow:SetPoint("BOTTOMRIGHT", 6, -6)
-    f.shadow:SetVertexColor(0.00, 0.00, 0.00, 0.50)
-
-    self:MakeBackdrop(f, 0.98)
+    self:MakeBackdrop(f)
 
     f.header = CreateFrame("Frame", nil, f)
     f.header:SetPoint("TOPLEFT", 8, -8)
     f.header:SetPoint("TOPRIGHT", -8, -8)
     f.header:SetHeight(42)
-    f.header:SetBackdrop(IsElvUIFrameStyle() and PANEL_BACKDROP or BACKDROP)
-    f.header:SetBackdropColor(SKIN.headerBg[1], SKIN.headerBg[2], SKIN.headerBg[3], SKIN.headerBg[4])
-    f.header:SetBackdropBorderColor(SKIN.windowBorder[1], SKIN.windowBorder[2], SKIN.windowBorder[3], SKIN.windowBorder[4])
-
-    f.headerGlow = f.header:CreateTexture(nil, "ARTWORK")
-    f.headerGlow:SetTexture("Interface\\ChatFrame\\ChatFrameBackground")
-    f.headerGlow:SetPoint("TOPLEFT", 2, -2)
-    f.headerGlow:SetPoint("TOPRIGHT", -2, -2)
-    f.headerGlow:SetHeight(15)
-    f.headerGlow:SetVertexColor(1.00, 0.74, 0.22, 0.10)
-
-    f.headerLine = f:CreateTexture(nil, "ARTWORK")
-    f.headerLine:SetTexture("Interface\\ChatFrame\\ChatFrameBackground")
-    f.headerLine:SetPoint("TOPLEFT", f.header, "BOTTOMLEFT", 0, -4)
-    f.headerLine:SetPoint("TOPRIGHT", f.header, "BOTTOMRIGHT", 0, -4)
-    f.headerLine:SetHeight(1)
-    f.headerLine:SetVertexColor(SKIN.headerLine[1], SKIN.headerLine[2], SKIN.headerLine[3], SKIN.headerLine[4])
 
     f.title = f.header:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
     f.title:SetPoint("LEFT", 12, 1)
     f.title:SetText("Reagent Bank")
     f.title:SetJustifyH("LEFT")
-    f.title:SetTextColor(1.00, 0.82, 0.28)
 
     f.modeText = f.header:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
     f.modeText:SetPoint("LEFT", f.title, "RIGHT", 14, -1)
     f.modeText:SetPoint("RIGHT", -44, 0)
     f.modeText:SetJustifyH("LEFT")
-    f.modeText:SetTextColor(0.78, 0.82, 0.88)
     f.modeText:SetText("")
 
-    f.close = self:CreateCloseButton(f.header)
-    f.close:SetPoint("RIGHT", -9, 0)
+    f.close = self:CreateCloseButton(f)
+    f.close:SetPoint("TOPRIGHT", -4, -4)
     f.close:SetScript("OnClick", function()
         RB:Close()
     end)
-
-    -- A single recessed strip behind both control rows groups the buttons and
-    -- separates them from the list below. BORDER keeps it above the window
-    -- backdrop, which ApplySkin recreates whenever the theme changes.
-    f.toolbarBg = f:CreateTexture(nil, "BORDER")
-    f.toolbarBg:SetTexture("Interface\\ChatFrame\\ChatFrameBackground")
-    f.toolbarBg:SetPoint("TOPLEFT", 14, -TOOLBAR_TOP)
-    f.toolbarBg:SetPoint("TOPRIGHT", -14, -TOOLBAR_TOP)
-    f.toolbarBg:SetHeight(TOOLBAR_HEIGHT)
-
-    f.toolbarLine = f:CreateTexture(nil, "ARTWORK")
-    f.toolbarLine:SetTexture("Interface\\ChatFrame\\ChatFrameBackground")
-    f.toolbarLine:SetPoint("TOPLEFT", 14, -(TOOLBAR_TOP + TOOLBAR_HEIGHT))
-    f.toolbarLine:SetPoint("TOPRIGHT", -14, -(TOOLBAR_TOP + TOOLBAR_HEIGHT))
-    f.toolbarLine:SetHeight(1)
 
     f.rootDeposit = self:CreateButton(f, ROOT_ACTION_BUTTON_WIDTH, ROOT_BUTTON_HEIGHT, "Deposit All")
     f.rootDeposit:SetPoint("TOPLEFT", ROOT_BUTTON_ROW_X, ROOT_BUTTON_ROW_Y)
@@ -6839,14 +5724,14 @@ function RB:CreateFrame()
     f.listHeader.bg = f.listHeader:CreateTexture(nil, "BACKGROUND")
     f.listHeader.bg:SetTexture("Interface\\ChatFrame\\ChatFrameBackground")
     f.listHeader.bg:SetAllPoints(f.listHeader)
-    f.listHeader.bg:SetVertexColor(0.11, 0.085, 0.045, 0.72)
+    SetTextureColor(f.listHeader.bg, LIST_HEADER_COLOR)
 
     f.listHeader.line = f.listHeader:CreateTexture(nil, "ARTWORK")
     f.listHeader.line:SetTexture("Interface\\ChatFrame\\ChatFrameBackground")
     f.listHeader.line:SetPoint("BOTTOMLEFT", 0, 0)
     f.listHeader.line:SetPoint("BOTTOMRIGHT", 0, 0)
     f.listHeader.line:SetHeight(1)
-    f.listHeader.line:SetVertexColor(SKIN.headerLine[1], SKIN.headerLine[2], SKIN.headerLine[3], 0.70)
+    SetTextureColor(f.listHeader.line, DIVIDER_COLOR)
 
     f.headerName = f.listHeader:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     f.headerName:SetPoint("LEFT", 32, 0)
@@ -6864,6 +5749,7 @@ function RB:CreateFrame()
     f.listHeader.split:SetWidth(1)
     f.listHeader.split:SetPoint("TOP", f.listHeader, "TOPRIGHT", -LIST_COLUMN_SPLIT, -4)
     f.listHeader.split:SetPoint("BOTTOM", f.listHeader, "BOTTOMRIGHT", -LIST_COLUMN_SPLIT, 3)
+    SetTextureColor(f.listHeader.split, DIVIDER_COLOR)
 
     f.rows = {}
     for i = 1, ROW_COUNT do
@@ -6896,14 +5782,7 @@ function RB:CreateFrame()
             row:SetHighlightTexture(row.hover)
         end
 
-        if (i % 2) == 0 then
-            SetTextureColor(row.bg, SKIN.rowEven)
-        else
-            SetTextureColor(row.bg, SKIN.rowOdd)
-        end
-        SetTextureColor(row.fill, SKIN.rowFill)
-        SetTextureColor(row.hover, SKIN.rowHover)
-        SetFontColor(row.count, SKIN.blueText)
+        self:StyleListRow(row, i)
 
         row:RegisterForClicks("LeftButtonUp", "RightButtonUp")
         row:SetScript("OnClick", function(selfRow, mouseButton)
@@ -6950,9 +5829,7 @@ function RB:CreateFrame()
     f.detailIconBorder:SetWidth(62)
     f.detailIconBorder:SetHeight(62)
     f.detailIconBorder:SetPoint("TOPLEFT", 16, -16)
-    f.detailIconBorder:SetBackdrop(GetButtonBackdrop())
-    f.detailIconBorder:SetBackdropColor(0.02, 0.02, 0.03, 0.90)
-    f.detailIconBorder:SetBackdropBorderColor(SKIN.buttonBorder[1], SKIN.buttonBorder[2], SKIN.buttonBorder[3], SKIN.buttonBorder[4])
+    self:MakeBackdrop(f.detailIconBorder, 0.90, true)
 
     f.detailIcon = f.detailIconBorder:CreateTexture(nil, "ARTWORK")
     f.detailIcon:SetWidth(54)
@@ -7050,7 +5927,7 @@ function RB:CreateFrame()
     f.quickWithdraw:SetPoint("CENTER", f, "CENTER", 0, 18)
     f.quickWithdraw:SetFrameLevel((f:GetFrameLevel() or 1) + 80)
     f.quickWithdraw:EnableMouse(true)
-    self:MakeBackdrop(f.quickWithdraw, 0.98, true)
+    self:MakeBackdrop(f.quickWithdraw)
     f.quickWithdraw:Hide()
 
     f.quickWithdrawTitle = f.quickWithdraw:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
@@ -7059,7 +5936,7 @@ function RB:CreateFrame()
     f.quickWithdrawTitle:SetTextColor(1.00, 0.82, 0.28)
 
     f.quickWithdrawClose = self:CreateCloseButton(f.quickWithdraw)
-    f.quickWithdrawClose:SetPoint("TOPRIGHT", -8, -8)
+    f.quickWithdrawClose:SetPoint("TOPRIGHT", -4, -4)
     f.quickWithdrawClose:SetScript("OnClick", function()
         RB:HideWithdrawPrompt()
     end)
@@ -7133,7 +6010,7 @@ function RB:CreateFrame()
     f.shoppingPrompt:SetPoint("CENTER", f, "CENTER", 0, 18)
     f.shoppingPrompt:SetFrameLevel((f:GetFrameLevel() or 1) + 82)
     f.shoppingPrompt:EnableMouse(true)
-    self:MakeBackdrop(f.shoppingPrompt, 0.98, true)
+    self:MakeBackdrop(f.shoppingPrompt)
     f.shoppingPrompt:Hide()
 
     f.shoppingPromptTitle = f.shoppingPrompt:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
@@ -7142,7 +6019,7 @@ function RB:CreateFrame()
     f.shoppingPromptTitle:SetTextColor(1.00, 0.82, 0.28)
 
     f.shoppingPromptClose = self:CreateCloseButton(f.shoppingPrompt)
-    f.shoppingPromptClose:SetPoint("TOPRIGHT", -8, -8)
+    f.shoppingPromptClose:SetPoint("TOPRIGHT", -4, -4)
     f.shoppingPromptClose:SetScript("OnClick", function()
         RB:HideShoppingAmountPrompt()
     end)
@@ -7210,7 +6087,7 @@ function RB:CreateFrame()
     f.depositPreview:SetPoint("CENTER", f, "CENTER", 0, 8)
     f.depositPreview:SetFrameLevel((f:GetFrameLevel() or 1) + 90)
     f.depositPreview:EnableMouse(true)
-    self:MakeBackdrop(f.depositPreview, 0.98, true)
+    self:MakeBackdrop(f.depositPreview)
     f.depositPreview:Hide()
 
     f.depositPreview.title = f.depositPreview:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
@@ -7221,7 +6098,7 @@ function RB:CreateFrame()
     f.depositPreview.title:SetText("Deposit Preview")
 
     f.depositPreview.close = self:CreateCloseButton(f.depositPreview)
-    f.depositPreview.close:SetPoint("TOPRIGHT", -8, -8)
+    f.depositPreview.close:SetPoint("TOPRIGHT", -4, -4)
     f.depositPreview.close:SetScript("OnClick", function()
         RB:HideDepositPreview()
     end)
@@ -7246,20 +6123,13 @@ function RB:CreateFrame()
             previewRow:SetPoint("TOP", f.depositPreview.rows[previewIndex - 1], "BOTTOM", 0, -3)
         end
 
-        if (previewIndex % 2) == 0 then
-            SetTextureColor(previewRow.bg, SKIN.rowEven, 0.28)
-        else
-            SetTextureColor(previewRow.bg, SKIN.rowOdd, 0.38)
-        end
+        self:StyleListRow(previewRow, previewIndex)
         if previewRow.name then
             previewRow.name:ClearAllPoints()
             previewRow.name:SetPoint("LEFT", previewRow.icon, "RIGHT", 8, 0)
             previewRow.name:SetPoint("RIGHT", -110, 0)
             previewRow.name:SetJustifyH("LEFT")
         end
-
-        SetFontColor(previewRow.name, SKIN.buttonText)
-        SetFontColor(previewRow.count, SKIN.blueText)
 
         f.depositPreview.rows[previewIndex] = previewRow
     end
@@ -7311,7 +6181,6 @@ function RB:CreateFrame()
 
     self.frame = f
     self:ApplyScale()
-    self:ApplySkin()
     self:UpdateControls()
 end
 
@@ -8353,34 +7222,8 @@ SlashCmdList["REAGENTBANKUI"] = function(msg)
         return
     end
 
-    if command == "settings" or command == "options" or command == "colors" or command == "color" then
-        RB:ToggleColorSettings()
-        return
-    end
-
-    if command == "style" or command == "frames" or command == "frame" then
-        local lowerValue = string.lower(Trim(value or ""))
-
-        if lowerValue == "" or lowerValue == "settings" or lowerValue == "options" then
-            RB:ToggleColorSettings()
-        else
-            RB:SetFrameStyle(lowerValue)
-        end
-
-        return
-    end
-
-    if command == "theme" or command == "schema" or command == "scheme" then
-        local lowerValue = string.lower(Trim(value or ""))
-
-        if lowerValue == "" or lowerValue == "settings" or lowerValue == "options" then
-            RB:ToggleColorSettings()
-        elseif lowerValue == "cycle" or lowerValue == "next" then
-            RB:CycleColorTheme()
-        else
-            RB:SetColorTheme(lowerValue)
-        end
-
+    if command == "settings" or command == "options" or command == "config" then
+        RB:OpenSettings()
         return
     end
 
@@ -8388,7 +7231,7 @@ SlashCmdList["REAGENTBANKUI"] = function(msg)
         local lowerValue = string.lower(Trim(value or ""))
 
         if lowerValue == "" or lowerValue == "settings" or lowerValue == "options" then
-            RB:ToggleColorSettings()
+            RB:OpenSettings()
         elseif lowerValue == "off" or lowerValue == "0" or lowerValue == "false" then
             RB:SetAutoDepositTickerSeconds(0)
         else
@@ -8454,7 +7297,7 @@ SlashCmdList["REAGENTBANKUI"] = function(msg)
     DEFAULT_CHAT_FRAME:AddMessage("  /rbank craft 5")
     DEFAULT_CHAT_FRAME:AddMessage("  /rbank lowstock 5")
     DEFAULT_CHAT_FRAME:AddMessage("  /rbank undo")
-    DEFAULT_CHAT_FRAME:AddMessage("  /rbank style classic|elvui")
+    DEFAULT_CHAT_FRAME:AddMessage("  /rbank settings")
     DEFAULT_CHAT_FRAME:AddMessage("  /rbank scale 0.75 - 1.20")
     DEFAULT_CHAT_FRAME:AddMessage("  /rbank ticker 0|30-3600")
     DEFAULT_CHAT_FRAME:AddMessage("  /rbank autodeposit on|off")
@@ -8470,7 +7313,10 @@ RB:SetScript("OnEvent", function(self, event, ...)
             if ReagentBankUIDB.scale == nil or (savedScale and math.abs(savedScale - 0.92) < 0.001) then
                 ReagentBankUIDB.scale = DEFAULT_SCALE
             end
-            ReagentBankUIDB.frameStyle = NormalizeFrameStyleKey(ReagentBankUIDB.frameStyle)
+            -- Left over from the old custom skin.
+            ReagentBankUIDB.colorTheme = nil
+            ReagentBankUIDB.frameStyle = nil
+            ReagentBankUIDB.settingsPoint = nil
             if ReagentBankUIDB.autoDepositLeftovers == nil then
                 ReagentBankUIDB.autoDepositLeftovers = false
             end
@@ -8479,7 +7325,6 @@ RB:SetScript("OnEvent", function(self, event, ...)
             ReagentBankUIDB.sortMode = NormalizeItemSortMode(ReagentBankUIDB.sortMode)
             ReagentBankUIDB.categorySortMode = NormalizeCategorySortMode(ReagentBankUIDB.categorySortMode)
             self:NormalizeShoppingList()
-            self:ApplySavedColorTheme()
             if ReagentBankUIDB.tradeSkillPrepareCount == nil then
                 ReagentBankUIDB.tradeSkillPrepareCount = 1
             else
@@ -8495,10 +7340,9 @@ RB:SetScript("OnEvent", function(self, event, ...)
         end
     elseif event == "PLAYER_LOGIN" then
         self:NormalizeShoppingList()
-        self:ApplySavedColorTheme()
         self:RestartAutoDepositTicker()
         self:CreatePaperDollButton()
-        self:ApplySkin()
+        self:CreateSettingsPanel()
         self:CreateTradeSkillControls()
     elseif event == "TRADE_SKILL_SHOW" then
         self:CreateTradeSkillControls()
