@@ -111,6 +111,9 @@ local PROFESSION_PANEL_NOTE_TOP = 216
 local PROFESSION_PANEL_MIN_HEIGHT = 344
 local PROFESSION_PRESET_BUTTON_HEIGHT = 20
 local PROFESSION_PRESET_GAP = 6
+local PROFESSION_ACTION_BUTTON_WIDTH = 140
+local PROFESSION_ACTION_BUTTON_HEIGHT = 22
+local PROFESSION_BAG_REFRESH_DELAY = 0.15
 local PROFESSION_PRESET_BATCH_COUNT = 100
 local PROFESSION_PANEL_MAX_HEIGHT = 500
 local PROFESSION_PANEL_ITEM_LIMIT = 3
@@ -876,6 +879,11 @@ function RB:OnUpdate(elapsed)
 
     self:RunAutoDepositTicker(now)
 
+    if self.pendingTradeSkillBagRefreshAt and now >= self.pendingTradeSkillBagRefreshAt then
+        self.pendingTradeSkillBagRefreshAt = nil
+        self:UpdateTradeSkillControls()
+    end
+
     if self.professionPrefetchQueue and #self.professionPrefetchQueue > 0 then
         self:SendNextProfessionPrefetchBatch(now)
     end
@@ -911,7 +919,7 @@ function RB:OnUpdate(elapsed)
         self:ClearBusy("No server data yet. Press Refresh to try again.", 1.00, 0.82, 0.32)
     end
 
-    if not self.pendingRefresh and not self.busyStartedAt and not self.pendingAutoDepositAt and not self.nextItemInfoRefreshAt and not self.nextAutoDepositTickerAt and not self.professionPrefetchDeadline then
+    if not self.pendingRefresh and not self.busyStartedAt and not self.pendingAutoDepositAt and not self.nextItemInfoRefreshAt and not self.nextAutoDepositTickerAt and not self.professionPrefetchDeadline and not self.pendingTradeSkillBagRefreshAt then
         self:SetScript("OnUpdate", nil)
     end
 end
@@ -3012,6 +3020,21 @@ function RB:GetActiveRecipeProvider()
         end
     end
     return nil
+end
+
+-- The Blizzard trade skill window has no provider to report bag changes, and a
+-- withdraw's confirmation reaches the client before the items land in the bags,
+-- so the sidebar would keep showing pre-withdraw bag counts. BAG_UPDATE fires
+-- once per bag, so the redraw is batched into one.
+function RB:ScheduleTradeSkillBagRefresh()
+    if self:GetActiveRecipeProvider() or not (TradeSkillFrame and TradeSkillFrame:IsShown()) then
+        return
+    end
+
+    if not self.pendingTradeSkillBagRefreshAt then
+        self.pendingTradeSkillBagRefreshAt = GetTime() + PROFESSION_BAG_REFRESH_DELAY
+        self:EnsureOnUpdate()
+    end
 end
 
 -- Providers call this when their selection or bags change.
@@ -5315,8 +5338,8 @@ function RB:CreateTradeSkillControls()
 
     self.tradeSkillMaxButton = self.tradeSkillPresetButtons[3]
 
-    local button = self:CreateButton(panel, contentWidth, 24, "Withdraw Needed")
-    button:SetPoint("TOPLEFT", inset, -95)
+    local button = self:CreateButton(panel, PROFESSION_ACTION_BUTTON_WIDTH, PROFESSION_ACTION_BUTTON_HEIGHT, "Withdraw Needed")
+    button:SetPoint("TOP", panel, "TOP", 0, -95)
     button:SetScript("OnClick", function()
         RB:WithdrawNeededForSelectedRecipe()
     end)
@@ -5330,8 +5353,8 @@ function RB:CreateTradeSkillControls()
     button:SetScript("OnLeave", HideTooltip)
     self.tradeSkillButton = button
 
-    local shoppingButton = self:CreateButton(panel, contentWidth, 24, "Add to AH List")
-    shoppingButton:SetPoint("TOPLEFT", button, "BOTTOMLEFT", 0, -6)
+    local shoppingButton = self:CreateButton(panel, PROFESSION_ACTION_BUTTON_WIDTH, PROFESSION_ACTION_BUTTON_HEIGHT, "Add to AH List")
+    shoppingButton:SetPoint("TOP", button, "BOTTOM", 0, -6)
     shoppingButton:SetScript("OnClick", function()
         RB:NormalizeTradeSkillQuantityBox(false)
         RB:ImportSelectedRecipeToShoppingList()
@@ -5348,7 +5371,7 @@ function RB:CreateTradeSkillControls()
     local check = CreateFrame("CheckButton", "ReagentBankUIAutoDepositLeftoversCheck", panel, "UICheckButtonTemplate")
     check:SetWidth(22)
     check:SetHeight(22)
-    check:SetPoint("TOPLEFT", shoppingButton, "BOTTOMLEFT", -2, -6)
+    check:SetPoint("TOPLEFT", inset - 2, -151)
     check:SetScript("OnClick", function(selfCheck)
         ReagentBankUIDB = ReagentBankUIDB or {}
         ReagentBankUIDB.autoDepositLeftovers = selfCheck:GetChecked() and true or false
@@ -7443,7 +7466,10 @@ RB:SetScript("OnEvent", function(self, event, ...)
         self:CreateTradeSkillControls()
         self:PrefetchProfessionBankCounts()
         self:UpdateTradeSkillControls()
+    elseif event == "BAG_UPDATE" then
+        self:ScheduleTradeSkillBagRefresh()
     elseif event == "TRADE_SKILL_CLOSE" then
+        self.pendingTradeSkillBagRefreshAt = nil
         self:ResetProfessionBankPrefetch()
         self:HideReagentBankOverlays()
         self:HandleTradeSkillClosed()
@@ -7464,5 +7490,6 @@ RB:RegisterEvent("PLAYER_LOGIN")
 RB:RegisterEvent("TRADE_SKILL_SHOW")
 RB:RegisterEvent("TRADE_SKILL_UPDATE")
 RB:RegisterEvent("TRADE_SKILL_CLOSE")
+RB:RegisterEvent("BAG_UPDATE")
 RB:RegisterEvent("AUCTION_HOUSE_SHOW")
 RB:RegisterEvent("AUCTION_HOUSE_CLOSED")
