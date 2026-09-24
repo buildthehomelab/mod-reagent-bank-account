@@ -1949,6 +1949,106 @@ function RB:AddDetailItemToShoppingList()
     end
 end
 
+local SHOPPING_AMOUNT_POPUP = "REAGENTBANKUI_SHOPPING_AMOUNT"
+
+local function ApplyShoppingAmountPopup(dialog)
+    local data = dialog and dialog.data
+    local box = dialog and _G[dialog:GetName() .. "EditBox"]
+    if not data or not data.entry or not box then
+        return
+    end
+
+    local amount = tonumber(box:GetText() or "")
+    if not amount or amount < 0 then
+        RB:Status("Enter a number, or 0 to take the item off the AH list.", 1.00, 0.82, 0.32)
+        return
+    end
+
+    amount = math.floor(amount)
+    if data.current > 0 then
+        RB:SetShoppingListItemAmount(data.entry, amount)
+    else
+        RB:AddShoppingListItem(data.entry, amount)
+    end
+end
+
+StaticPopupDialogs[SHOPPING_AMOUNT_POPUP] = {
+    text = "AH shopping list: %s\n%s",
+    button1 = ACCEPT,
+    button2 = CANCEL,
+    hasEditBox = 1,
+    maxLetters = 6,
+    timeout = 0,
+    whileDead = 1,
+    hideOnEscape = 1,
+    OnAccept = function(self)
+        ApplyShoppingAmountPopup(self)
+    end,
+    EditBoxOnEnterPressed = function(self)
+        local dialog = self:GetParent()
+        ApplyShoppingAmountPopup(dialog)
+        dialog:Hide()
+    end,
+    EditBoxOnEscapePressed = function(self)
+        self:GetParent():Hide()
+    end,
+}
+
+-- Asks how many of an item to buy. Items already on the list start at their
+-- current amount, new ones at a full stack.
+function RB:ShowShoppingAmountPopup(itemEntry)
+    itemEntry = tonumber(itemEntry)
+    if not itemEntry or itemEntry <= 0 then
+        return false
+    end
+
+    itemEntry = math.floor(itemEntry)
+    local current = math.floor(tonumber(self:GetShoppingListMap()[itemEntry]) or 0)
+    local _, _, _, stackCount = GetItemDisplay(itemEntry)
+    local hint
+
+    if current > 0 then
+        hint = "On the list: x" .. FormatCount(current) .. ". Enter the new amount, or 0 to remove it."
+    else
+        hint = "How many do you want to buy?"
+    end
+
+    local dialog = StaticPopup_Show(SHOPPING_AMOUNT_POPUP, GetItemChatText(itemEntry), hint)
+    if not dialog then
+        return false
+    end
+
+    dialog.data = {
+        entry = itemEntry,
+        current = current,
+    }
+
+    local box = _G[dialog:GetName() .. "EditBox"]
+    if box then
+        box:SetText(tostring(current > 0 and current or stackCount))
+        box:SetFocus()
+        box:HighlightText()
+    end
+
+    return true
+end
+
+-- An item dropped from the bags onto the AH list goes to the amount popup
+-- and back into the bag it came from.
+function RB:AddCursorItemToShoppingList()
+    if not GetCursorInfo then
+        return false
+    end
+
+    local kind, itemId, link = GetCursorInfo()
+    if kind ~= "item" then
+        return false
+    end
+
+    ClearCursor()
+    return self:ShowShoppingAmountPopup(tonumber(itemId) or ParseItemIdFromLink(link))
+end
+
 function RB:ImportSelectedRecipeToShoppingList()
     local reagents, errText, recipeName, repeatCount = self:GetSelectedTradeSkillReagents()
 
@@ -2257,6 +2357,12 @@ function RB:CreateAuctionShoppingFrame()
     frame:SetScript("OnDragStop", function(selfFrame)
         selfFrame:StopMovingOrSizing()
     end)
+    frame:SetScript("OnReceiveDrag", function()
+        RB:AddCursorItemToShoppingList()
+    end)
+    frame:SetScript("OnMouseUp", function()
+        RB:AddCursorItemToShoppingList()
+    end)
     self:MakeBackdrop(frame)
     frame:Hide()
 
@@ -2344,11 +2450,28 @@ function RB:CreateAuctionShoppingFrame()
 
         self:StyleListRow(row, index)
 
-        row:RegisterForClicks("LeftButtonUp")
-        row:SetScript("OnClick", function(selfRow)
-            if selfRow.item and selfRow.item.entry then
+        row:RegisterForClicks("LeftButtonUp", "RightButtonUp")
+        row:SetScript("OnClick", function(selfRow, mouseButton)
+            if RB:AddCursorItemToShoppingList() then
+                return
+            end
+
+            if not selfRow.item or not selfRow.item.entry then
+                return
+            end
+
+            if mouseButton == "RightButton" then
+                if IsShiftKeyDown and IsShiftKeyDown() then
+                    RB:RemoveShoppingListItem(selfRow.item.entry)
+                else
+                    RB:ShowShoppingAmountPopup(selfRow.item.entry)
+                end
+            else
                 RB:SearchAuctionHouseForItem(selfRow.item.entry)
             end
+        end)
+        row:SetScript("OnReceiveDrag", function()
+            RB:AddCursorItemToShoppingList()
         end)
         row:SetScript("OnEnter", function(selfRow)
             if selfRow.item and selfRow.item.entry then
@@ -2540,7 +2663,7 @@ function RB:ShowAuctionShoppingFrame()
     self:PositionAuctionShoppingFrame()
     self:RefreshAuctionShoppingFrame()
     self.auctionShoppingFrame:Show()
-    self:Status("Left-click an item here to search the Auction House.", 0.82, 0.82, 0.82)
+    self:Status("Click to search, right-click to change amount. Ctrl+Shift-click any item to add it.", 0.82, 0.82, 0.82)
 end
 
 function RB:HideAuctionShoppingFrame(dismissed)
@@ -7065,7 +7188,7 @@ function RB:RenderShoppingList(preserveStatus)
     self:UpdateControls()
 
     if not preserveStatus and not self.busyKind then
-        self:Status("Left-click searches the Auction House. Right-click edits amount. Shift-right-click removes.", 0.82, 0.82, 0.82)
+        self:Status("Left-click searches the AH. Right-click edits amount. Ctrl+Shift-click any item to add it.", 0.82, 0.82, 0.82)
     end
 end
 
@@ -7518,6 +7641,20 @@ for _, key in ipairs({
     end
 end
 
+-- Ctrl+Shift-click on any item (bags, Auction House, chat links) opens the AH
+-- list amount popup. Alt is left alone because Auctionator uses Alt-click in
+-- the bags while the Auction House is open.
+if hooksecurefunc and HandleModifiedItemClick then
+    hooksecurefunc("HandleModifiedItemClick", function(link)
+        if IsControlKeyDown() and IsShiftKeyDown() and not IsAltKeyDown() then
+            local itemEntry = ParseItemIdFromLink(link)
+            if itemEntry then
+                RB:ShowShoppingAmountPopup(itemEntry)
+            end
+        end
+    end)
+end
+
 if hooksecurefunc and PlaceAuctionBid then
     hooksecurefunc("PlaceAuctionBid", function(listType, index, bid)
         RB:OnPlaceAuctionBid(listType, index, bid)
@@ -7726,6 +7863,7 @@ SlashCmdList["REAGENTBANKUI"] = function(msg)
     DEFAULT_CHAT_FRAME:AddMessage("  /rbank plan 5")
     DEFAULT_CHAT_FRAME:AddMessage("  /rbank ahlist")
     DEFAULT_CHAT_FRAME:AddMessage("  /rbank ahlist recipe|add itemId amount|print|clear")
+    DEFAULT_CHAT_FRAME:AddMessage("  Ctrl+Shift-click any item to add it to the AH list")
     DEFAULT_CHAT_FRAME:AddMessage("  /rbank craft 5")
     DEFAULT_CHAT_FRAME:AddMessage("  /rbank lowstock 5")
     DEFAULT_CHAT_FRAME:AddMessage("  /rbank undo")
