@@ -63,10 +63,17 @@ Shopping list features:
 - Left-click an item to search for it on the Auction House
 - Print the list to chat
 - Clear the list
-- Shows needed amount and current bag count
+- Shows the amount left to buy, how many you have bought, and current bag count
 - Compact AH helper panel opens beside the Auction House frame
 
-Note: AH purchases do not automatically decrement the list. Adjust amounts manually from the list. I also have not tested this with any other AH addons.
+Buying an item on the list takes it off the list. Each buyout the server accepts subtracts that stack from the amount left and adds it to the bought count. When the amount left reaches zero, the item is removed and the total bought is printed to chat. This works for buyouts from the default Auction House UI and from Auctionator. Plain bids are not counted, since you only get the item if you win the auction later.
+
+### Auctionator
+
+When [Auctionator](https://github.com/buildthehomelab/wow-addon-Auctionator) is loaded:
+
+- Clicking an AH list row searches on Auctionator's **Buy** tab instead of the default Browse tab
+- The AH list is mirrored into an Auctionator shopping list named **Reagent Bank**, kept up to date as items are added, bought, or removed
 
 ---
 
