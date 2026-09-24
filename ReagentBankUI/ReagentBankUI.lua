@@ -120,7 +120,8 @@ local PROFESSION_PANEL_ITEM_LIMIT = 3
 local SHOPPING_LIST_CHAT_ITEM_LIMIT = 12
 local SHOPPING_LIST_IMPORT_TIMEOUT = 10.0
 local AUCTION_SHOPPING_ROW_COUNT = 9
-local AUCTION_SHOPPING_FRAME_WIDTH = 318
+local AUCTION_SHOPPING_FRAME_WIDTH = 350
+local AUCTION_STEP_BUTTON_SIZE = 18
 local AUCTION_SHOPPING_FRAME_HEIGHT = 382
 local AUCTION_SHOPPING_FRAME_GAP = 8
 -- A bid with no server reply after this long is dropped instead of counted.
@@ -1704,6 +1705,43 @@ function RB:SetShoppingListItemAmount(itemEntry, amount, silent)
     return true
 end
 
+-- The AH panel's -/+ buttons: one item per click, or a full stack with
+-- Shift. Minus stops at 1 so a stray click cannot drop an item and its bought
+-- count; Shift-right-click the row to take it off the list.
+function RB:StepShoppingListItem(itemEntry, direction)
+    itemEntry = tonumber(itemEntry)
+    if not itemEntry or itemEntry <= 0 then
+        return false
+    end
+
+    itemEntry = math.floor(itemEntry)
+    local current = math.floor(tonumber(self:GetShoppingListMap()[itemEntry]) or 0)
+    if current <= 0 then
+        return false
+    end
+
+    local step = 1
+    if IsShiftKeyDown and IsShiftKeyDown() then
+        local _, _, _, stackCount = GetItemDisplay(itemEntry)
+        step = math.max(tonumber(stackCount) or 1, 1)
+    end
+
+    if direction < 0 then
+        step = -step
+    end
+
+    local amount = math.max(current + step, 1)
+    if amount == current then
+        return false
+    end
+
+    self:SetShoppingListItemAmount(itemEntry, amount, true)
+
+    local _, name = GetItemDisplay(itemEntry)
+    self:Status(tostring(name) .. ": x" .. FormatCount(amount) .. " left to buy.", 0.45, 1.00, 0.45)
+    return true
+end
+
 function RB:ClearShoppingList()
     ReagentBankUIDB = ReagentBankUIDB or {}
     ReagentBankUIDB.shoppingList = {}
@@ -2437,10 +2475,15 @@ function RB:CreateAuctionShoppingFrame()
             row:SetHighlightTexture(row.hover)
         end
 
+        row.plus = self:CreateStepButton(row, "Plus", 1)
+        row.plus:SetPoint("RIGHT", -93, 0)
+        row.minus = self:CreateStepButton(row, "Minus", -1)
+        row.minus:SetPoint("RIGHT", row.plus, "LEFT", -2, 0)
+
         if row.text then
             row.text:ClearAllPoints()
             row.text:SetPoint("LEFT", row.icon, "RIGHT", 8, 0)
-            row.text:SetPoint("RIGHT", -92, 0)
+            row.text:SetPoint("RIGHT", row.minus, "LEFT", -4, 0)
         end
 
         if row.count then
@@ -2555,6 +2598,8 @@ function RB:ClearAuctionShoppingRows()
 
     for _, row in ipairs(frame.rows) do
         row.item = nil
+        row.plus:Hide()
+        row.minus:Hide()
         if row.fill then
             row.fill:SetWidth(1)
             row.fill:Hide()
@@ -2643,6 +2688,9 @@ function RB:RefreshAuctionShoppingFrame(preservePage)
             row.text:SetText(link or name)
             row.count:SetText("x" .. FormatCount(item.amount) .. " / " .. self:FormatShoppingBought(item.entry))
             self:SetRowFill(row, item.amount, maxAmount)
+            row.plus:Show()
+            row.minus:Show()
+            row.minus:SetAlpha((tonumber(item.amount) or 0) > 1 and 1 or 0.4)
             row:Show()
         end
     end
@@ -2670,7 +2718,7 @@ function RB:ShowAuctionShoppingFrame()
     self:PositionAuctionShoppingFrame()
     self:RefreshAuctionShoppingFrame()
     self.auctionShoppingFrame:Show()
-    self:Status("Click to search, right-click to change amount. Ctrl+Shift-click any item to add it.", 0.82, 0.82, 0.82)
+    self:Status("Click to search. -/+ adjust (Shift: a stack). Ctrl+Shift-click any item to add it.", 0.82, 0.82, 0.82)
 end
 
 function RB:HideAuctionShoppingFrame(dismissed)
@@ -5937,6 +5985,38 @@ end
 
 function RB:CreateCloseButton(parent)
     return CreateFrame("Button", NextWidgetName("CloseButton"), parent, "UIPanelCloseButton")
+end
+
+-- A small -/+ icon button for an AH list row; direction is -1 or 1.
+function RB:CreateStepButton(row, kind, direction)
+    local button = CreateFrame("Button", nil, row)
+    button:SetWidth(AUCTION_STEP_BUTTON_SIZE)
+    button:SetHeight(AUCTION_STEP_BUTTON_SIZE)
+    button:SetNormalTexture("Interface\\Buttons\\UI-" .. kind .. "Button-Up")
+    button:SetPushedTexture("Interface\\Buttons\\UI-" .. kind .. "Button-Down")
+    button:SetHighlightTexture("Interface\\Buttons\\UI-PlusButton-Hilight", "ADD")
+    button:Hide()
+
+    button:SetScript("OnClick", function()
+        if row.item and row.item.entry then
+            RB:StepShoppingListItem(row.item.entry, direction)
+        end
+    end)
+    button:SetScript("OnEnter", function(selfButton)
+        GameTooltip:SetOwner(selfButton, "ANCHOR_RIGHT")
+        if direction > 0 then
+            GameTooltip:SetText("Buy 1 more")
+            GameTooltip:AddLine("Shift-click: a full stack more", 0.78, 0.82, 0.88)
+        else
+            GameTooltip:SetText("Buy 1 fewer")
+            GameTooltip:AddLine("Shift-click: a full stack fewer", 0.78, 0.82, 0.88)
+            GameTooltip:AddLine("Shift-right-click the row to remove it", 0.78, 0.82, 0.88)
+        end
+        GameTooltip:Show()
+    end)
+    button:SetScript("OnLeave", HideTooltip)
+
+    return button
 end
 
 function RB:CreateLabel(parent, text, template)
