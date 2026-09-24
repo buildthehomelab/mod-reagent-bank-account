@@ -2243,7 +2243,12 @@ function RB:FixAuctionatorShoppingListOptions()
         scroll:SetWidth(AUCTIONATOR_OPTIONS_LIST_WIDTH)
     end
 
+    -- The buildthehomelab Auctionator already makes this window movable with a
+    -- close button; adding a second one would stack two on top of each other.
     local editFrame = _G.Atr_ShpList_Edit_Frame
+    if editFrame and editFrame:IsMovable() then
+        self.auctionatorEditFrameFixed = true
+    end
     if editFrame and not self.auctionatorEditFrameFixed then
         self.auctionatorEditFrameFixed = true
         editFrame:SetMovable(true)
