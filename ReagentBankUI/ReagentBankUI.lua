@@ -2274,9 +2274,11 @@ end
 function RB:SyncAuctionatorShoppingList()
     local lists = _G.AUCTIONATOR_SHOPPING_LISTS
 
-    -- lists[1] is Auctionator's Recent Searches list. Without it Auctionator
-    -- has not set up its lists yet, and adding one first would stop it.
-    if type(lists) ~= "table" or not lists[1] or type(Atr_SList) ~= "table" then
+    -- lists[1] is Auctionator's Recent Searches list. Until Auctionator has
+    -- given it the Atr_SList methods, its lists are not set up yet and must
+    -- be left alone.
+    if type(lists) ~= "table" or type(Atr_SList) ~= "table"
+        or type(lists[1]) ~= "table" or getmetatable(lists[1]) ~= Atr_SList then
         return
     end
 
