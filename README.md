@@ -60,6 +60,7 @@ You can add items to the AH list from:
 Shopping list features:
 
 - Edit item amounts directly in the AH list
+- **-** and **+** buttons on each row of the AH panel change the amount by 1, or by a full stack with Shift. Minus stops at 1; Shift-right-click the row to remove an item
 - Right-click an item to change its amount, in the main window or the AH panel. Ctrl+Shift-clicking an item already on the list also changes its amount; enter 0 to remove it
 - Shift-right-click an item to remove it
 - Left-click an item to search for it on the Auction House
