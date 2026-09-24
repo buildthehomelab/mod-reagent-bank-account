@@ -123,6 +123,11 @@ local AUCTION_SHOPPING_ROW_COUNT = 9
 local AUCTION_SHOPPING_FRAME_WIDTH = 318
 local AUCTION_SHOPPING_FRAME_HEIGHT = 382
 local AUCTION_SHOPPING_FRAME_GAP = 8
+-- A bid with no server reply after this long is dropped instead of counted.
+local AUCTION_BID_REPLY_TIMEOUT = 20.0
+-- Auctionator's Buy tab id and the shopping list the AH list is mirrored into.
+local AUCTIONATOR_BUY_TAB = 3
+local AUCTIONATOR_LIST_NAME = "Reagent Bank"
 local LOW_STOCK_DEFAULT_CRAFTS = 5
 
 -- Main window top action button placement.
@@ -1460,6 +1465,21 @@ function RB:NormalizeShoppingList()
     end
 
     ReagentBankUIDB.shoppingList = normalized
+
+    -- Bought counts only mean something while the item is still on the list.
+    local bought = {}
+    if type(ReagentBankUIDB.shoppingBought) == "table" then
+        for itemEntry, amount in pairs(ReagentBankUIDB.shoppingBought) do
+            itemEntry = tonumber(itemEntry)
+            amount = math.floor(tonumber(amount) or 0)
+
+            if itemEntry and normalized[math.floor(itemEntry)] and amount > 0 then
+                bought[math.floor(itemEntry)] = amount
+            end
+        end
+    end
+    ReagentBankUIDB.shoppingBought = bought
+
     return normalized
 end
 
@@ -1471,6 +1491,53 @@ function RB:GetShoppingListMap()
     end
 
     return ReagentBankUIDB.shoppingList
+end
+
+function RB:GetShoppingBoughtMap()
+    ReagentBankUIDB = ReagentBankUIDB or {}
+
+    if type(ReagentBankUIDB.shoppingBought) ~= "table" then
+        ReagentBankUIDB.shoppingBought = {}
+    end
+
+    return ReagentBankUIDB.shoppingBought
+end
+
+function RB:GetShoppingBoughtAmount(itemEntry)
+    itemEntry = tonumber(itemEntry)
+    if not itemEntry then
+        return 0
+    end
+
+    return math.floor(tonumber(self:GetShoppingBoughtMap()[math.floor(itemEntry)]) or 0)
+end
+
+function RB:GetShoppingBoughtTotal()
+    local total = 0
+
+    for _, amount in pairs(self:GetShoppingBoughtMap()) do
+        total = total + (tonumber(amount) or 0)
+    end
+
+    return total
+end
+
+function RB:FormatShoppingBought(itemEntry)
+    local bought = self:GetShoppingBoughtAmount(itemEntry)
+    if bought > 0 then
+        return ColorText("x" .. FormatCount(bought), TEXT_GOOD)
+    end
+
+    return ColorText("x0", TEXT_DIM)
+end
+
+function RB:RefreshShoppingListViews()
+    if self.currentView == "shopping" then
+        self:RenderShoppingList(true)
+    else
+        self:UpdateControls()
+    end
+    self:RefreshAuctionShoppingFrame(true)
 end
 
 function RB:GetShoppingListItems()
@@ -1591,18 +1658,14 @@ function RB:RemoveShoppingListItem(itemEntry, silent)
     end
 
     list[itemEntry] = nil
+    self:GetShoppingBoughtMap()[itemEntry] = nil
 
     if not silent then
         PrintAddon("removed " .. BuildItemAmountChatText(itemEntry, amount) .. " from the AH shopping list.")
         self:Status("Removed item from AH shopping list.", 0.82, 0.82, 0.82)
     end
 
-    if self.currentView == "shopping" then
-        self:RenderShoppingList(true)
-    else
-        self:UpdateControls()
-    end
-    self:RefreshAuctionShoppingFrame(true)
+    self:RefreshShoppingListViews()
 
     return true
 end
@@ -1642,17 +1705,96 @@ end
 function RB:ClearShoppingList()
     ReagentBankUIDB = ReagentBankUIDB or {}
     ReagentBankUIDB.shoppingList = {}
+    ReagentBankUIDB.shoppingBought = {}
     self:HideShoppingAmountPrompt()
 
     PrintAddon("AH shopping list cleared.")
     self:Status("AH shopping list cleared.", 0.82, 0.82, 0.82)
 
-    if self.currentView == "shopping" then
-        self:RenderShoppingList(true)
-    else
-        self:UpdateControls()
+    self:RefreshShoppingListViews()
+end
+
+-- Called once the server accepts a buyout. Takes the stack off the list and
+-- keeps a running bought count until the item is covered.
+function RB:RecordShoppingPurchase(itemEntry, count)
+    itemEntry = tonumber(itemEntry)
+    count = math.floor(tonumber(count) or 0)
+
+    if not itemEntry or itemEntry <= 0 or count <= 0 then
+        return false
     end
-    self:RefreshAuctionShoppingFrame(true)
+
+    itemEntry = math.floor(itemEntry)
+    local list = self:GetShoppingListMap()
+    local needed = math.floor(tonumber(list[itemEntry]) or 0)
+
+    if needed <= 0 then
+        return false
+    end
+
+    local boughtMap = self:GetShoppingBoughtMap()
+    local bought = math.floor(tonumber(boughtMap[itemEntry]) or 0) + count
+    local remaining = needed - count
+    local _, name = GetItemDisplay(itemEntry)
+
+    if remaining > 0 then
+        list[itemEntry] = remaining
+        boughtMap[itemEntry] = bought
+        PrintAddon("bought " .. BuildItemAmountChatText(itemEntry, count) .. ": " .. FormatCount(bought) .. " bought, " .. FormatCount(remaining) .. " left on the AH list.")
+        self:Status("Bought " .. FormatCount(count) .. "x " .. tostring(name) .. ". " .. FormatCount(remaining) .. " left to buy.", 0.45, 1.00, 0.45)
+    else
+        list[itemEntry] = nil
+        boughtMap[itemEntry] = nil
+        local extra = ""
+        if remaining < 0 then
+            extra = " (" .. FormatCount(-remaining) .. " more than needed)"
+        end
+        PrintAddon("finished " .. GetItemChatText(itemEntry) .. ": bought " .. FormatCount(bought) .. extra .. ". Removed it from the AH list.")
+        self:Status("Finished buying " .. tostring(name) .. ".", 0.45, 1.00, 0.45)
+    end
+
+    self:RefreshShoppingListViews()
+    return true
+end
+
+-- PlaceAuctionBid gets no direct reply, so each bid is queued here and
+-- matched to the server's answer: "Bid accepted." or an auction error. The
+-- server answers bids in the order they were placed.
+function RB:OnPlaceAuctionBid(listType, index, bid)
+    local link = GetAuctionItemLink and GetAuctionItemLink(listType, index)
+    local _, _, count, _, _, _, _, _, buyoutPrice = GetAuctionItemInfo(listType, index)
+    buyoutPrice = tonumber(buyoutPrice) or 0
+
+    self.pendingAuctionBids = self.pendingAuctionBids or {}
+    table.insert(self.pendingAuctionBids, {
+        itemEntry = ParseItemIdFromLink(link),
+        count = tonumber(count) or 0,
+        isBuyout = buyoutPrice > 0 and (tonumber(bid) or 0) >= buyoutPrice,
+        placedAt = GetTime(),
+    })
+end
+
+function RB:PopPendingAuctionBid()
+    local queue = self.pendingAuctionBids
+    if not queue then
+        return nil
+    end
+
+    local now = GetTime()
+    while queue[1] and now - (queue[1].placedAt or 0) > AUCTION_BID_REPLY_TIMEOUT do
+        table.remove(queue, 1)
+    end
+
+    return table.remove(queue, 1)
+end
+
+function RB:HandleAuctionBidAccepted()
+    local pending = self:PopPendingAuctionBid()
+
+    -- A plain bid only wins later, if at all, so only buyouts count.
+    if pending and pending.isBuyout then
+        self:RecordShoppingPurchase(pending.itemEntry, pending.count)
+    end
 end
 
 function RB:GetShoppingPromptAmount()
@@ -1923,6 +2065,11 @@ function RB:SearchAuctionHouseForItem(itemEntry)
         return false
     end
 
+    if self:SearchAuctionatorForItem(name) then
+        self:Status("Searching Auctionator for " .. name .. ".", 0.45, 1.00, 0.45)
+        return true
+    end
+
     if AuctionFrameTab1 and AuctionFrameTab1.Click then
         AuctionFrameTab1:Click()
     end
@@ -1954,6 +2101,76 @@ function RB:SearchAuctionHouseForItem(itemEntry)
 
     self:Status("Auction House search is not ready yet.", 1.00, 0.82, 0.32)
     return false
+end
+
+-- Runs the search on Auctionator's Buy tab when Auctionator is loaded, so the
+-- results land where its Buy button can pick them up.
+function RB:SearchAuctionatorForItem(name)
+    if type(Atr_SelectPane) ~= "function" or type(Atr_FindTabIndex) ~= "function"
+        or type(Atr_Search_Onclick) ~= "function" or not Atr_Search_Box then
+        return false
+    end
+
+    local ok = pcall(function()
+        if (tonumber(Atr_FindTabIndex(AUCTIONATOR_BUY_TAB)) or 0) <= 0 then
+            error("Auctionator Buy tab is not set up")
+        end
+
+        Atr_SelectPane(AUCTIONATOR_BUY_TAB)
+        Atr_Search_Box:SetText(name)
+        Atr_Search_Onclick()
+    end)
+
+    return ok
+end
+
+-- Keeps an Auctionator shopping list named "Reagent Bank" in step with the AH
+-- list, so the same items can be searched from Auctionator's own list panel.
+function RB:SyncAuctionatorShoppingList()
+    local lists = _G.AUCTIONATOR_SHOPPING_LISTS
+
+    -- lists[1] is Auctionator's Recent Searches list. Without it Auctionator
+    -- has not set up its lists yet, and adding one first would stop it.
+    if type(lists) ~= "table" or not lists[1] or type(Atr_SList) ~= "table" then
+        return
+    end
+
+    local slist
+    for _, candidate in ipairs(lists) do
+        if type(candidate) == "table" and candidate.name == AUCTIONATOR_LIST_NAME then
+            slist = candidate
+            break
+        end
+    end
+
+    local items = self:GetShoppingListItems()
+
+    if not slist then
+        if #items == 0 then
+            return
+        end
+
+        slist = setmetatable({ name = AUCTIONATOR_LIST_NAME, items = {} }, Atr_SList)
+        table.insert(lists, slist)
+        if type(Atr_SortSlists) == "function" then
+            table.sort(lists, Atr_SortSlists)
+        end
+    end
+
+    local names = {}
+    for _, item in ipairs(items) do
+        local _, name, _, _, missingInfo = GetItemDisplay(item.entry)
+        if not missingInfo then
+            table.insert(names, name)
+        end
+    end
+
+    slist.items = names
+    slist.isSorted = false
+
+    if type(Atr_GetCurrentPane) == "function" and Atr_GetCurrentPane() and type(Atr_SetUINeedsUpdate) == "function" then
+        Atr_SetUINeedsUpdate()
+    end
 end
 
 function RB:PositionAuctionShoppingFrame()
@@ -2032,7 +2249,7 @@ function RB:CreateAuctionShoppingFrame()
     frame.headerCount:SetWidth(82)
     frame.headerCount:SetPoint("RIGHT", -7, 0)
     frame.headerCount:SetJustifyH("RIGHT")
-    frame.headerCount:SetText("Need / Bags")
+    frame.headerCount:SetText("Left / Bought")
 
     frame.rows = {}
     for index = 1, AUCTION_SHOPPING_ROW_COUNT do
@@ -2190,12 +2407,13 @@ function RB:SetAuctionShoppingEmptyRow(text)
 end
 
 function RB:RefreshAuctionShoppingFrame(preservePage)
+    self:NormalizeShoppingList()
+    self:SyncAuctionatorShoppingList()
+
     local frame = self.auctionShoppingFrame
     if not frame then
         return
     end
-
-    self:NormalizeShoppingList()
 
     local items = self:GetShoppingListItems()
     local total = 0
@@ -2218,7 +2436,12 @@ function RB:RefreshAuctionShoppingFrame(preservePage)
 
     frame.page = page
     frame.totalPages = totalPages
-    frame.summary:SetText(FormatCount(total) .. " reagent(s) across " .. tostring(#items) .. " item type(s)")
+    local summary = FormatCount(total) .. " reagent(s) across " .. tostring(#items) .. " item type(s)"
+    local boughtTotal = self:GetShoppingBoughtTotal()
+    if boughtTotal > 0 then
+        summary = summary .. ", " .. FormatCount(boughtTotal) .. " bought"
+    end
+    frame.summary:SetText(summary)
     frame.pageText:SetText("Page " .. tostring(page + 1) .. "/" .. tostring(totalPages))
 
     self:ClearAuctionShoppingRows()
@@ -2235,15 +2458,10 @@ function RB:RefreshAuctionShoppingFrame(preservePage)
                 missingItemInfo = true
             end
 
-            local bagCount = 0
-            if GetItemCount then
-                bagCount = tonumber(GetItemCount(item.entry, false)) or 0
-            end
-
             row.item = item
             row.icon:SetTexture(icon)
             row.text:SetText(link or name)
-            row.count:SetText("x" .. FormatCount(item.amount) .. " / x" .. FormatCount(bagCount))
+            row.count:SetText("x" .. FormatCount(item.amount) .. " / " .. self:FormatShoppingBought(item.entry))
             self:SetRowFill(row, item.amount, maxAmount)
             row:Show()
         end
@@ -6727,13 +6945,18 @@ function RB:RenderShoppingList(preserveStatus)
 
     f:Show()
     f.title:SetText("AH Shopping List")
-    f.modeText:SetText(FormatCount(total) .. " reagent(s) across " .. tostring(#items) .. " item type(s)")
+    local summary = FormatCount(total) .. " reagent(s) across " .. tostring(#items) .. " item type(s)"
+    local boughtTotal = self:GetShoppingBoughtTotal()
+    if boughtTotal > 0 then
+        summary = summary .. ", " .. FormatCount(boughtTotal) .. " bought"
+    end
+    f.modeText:SetText(summary)
     f.pageText:SetText("")
     f.shoppingPageText:SetText("Page " .. tostring(page + 1) .. "/" .. tostring(totalPages))
     f.headerName:ClearAllPoints()
     f.headerName:SetPoint("LEFT", 32, 0)
     f.headerName:SetText("Item")
-    f.headerCount:SetText("Needed / Bags")
+    f.headerCount:SetText("Left / Bought / Bags")
 
     self:SetCommonVisibility("shopping")
     self:ClearRows()
@@ -6772,7 +6995,7 @@ function RB:RenderShoppingList(preserveStatus)
             row.text:SetPoint("LEFT", row.icon, "RIGHT", 9, 0)
             row.text:SetPoint("RIGHT", -170, 0)
             row.text:SetText(link or name)
-            row.count:SetText("x" .. FormatCount(item.amount) .. " / x" .. FormatCount(bagCount))
+            row.count:SetText("x" .. FormatCount(item.amount) .. " / " .. self:FormatShoppingBought(item.entry) .. " / x" .. FormatCount(bagCount))
             self:SetRowFill(row, item.amount, maxAmount)
             row:Show()
         end
@@ -7227,6 +7450,52 @@ else
 end
 
 RB:InstallBankCountTooltipHooks()
+
+-- Auction replies that mean a queued bid did not go through.
+local AUCTION_BID_FAILED_MESSAGES = {}
+for _, key in ipairs({
+    "ERR_ITEM_NOT_FOUND",
+    "ERR_NOT_ENOUGH_MONEY",
+    "ERR_AUCTION_BID_OWN",
+    "ERR_AUCTION_HIGHER_BID",
+    "ERR_AUCTION_BID_INCREMENT",
+    "ERR_AUCTION_DATABASE_ERROR",
+    "ERR_RESTRICTED_ACCOUNT",
+}) do
+    local text = _G[key]
+    if type(text) == "string" and text ~= "" then
+        AUCTION_BID_FAILED_MESSAGES[text] = true
+    end
+end
+
+if hooksecurefunc and PlaceAuctionBid then
+    hooksecurefunc("PlaceAuctionBid", function(listType, index, bid)
+        RB:OnPlaceAuctionBid(listType, index, bid)
+    end)
+end
+
+-- Kept off RB's own frame: RB only takes CHAT_MSG_SYSTEM as an event when the
+-- chat filter is missing, and HandleProtocol must not run twice.
+local auctionBidFrame = CreateFrame("Frame")
+auctionBidFrame:RegisterEvent("CHAT_MSG_SYSTEM")
+auctionBidFrame:RegisterEvent("UI_ERROR_MESSAGE")
+auctionBidFrame:SetScript("OnEvent", function(self, event, arg1, arg2)
+    if not RB.pendingAuctionBids or #RB.pendingAuctionBids == 0 then
+        return
+    end
+
+    if event == "CHAT_MSG_SYSTEM" then
+        if ERR_AUCTION_BID_PLACED and arg1 == ERR_AUCTION_BID_PLACED then
+            RB:HandleAuctionBidAccepted()
+        end
+    elseif event == "UI_ERROR_MESSAGE" then
+        -- 3.3.5 passes the message first; later clients pass a type first.
+        local message = type(arg2) == "string" and arg2 or arg1
+        if AUCTION_BID_FAILED_MESSAGES[message] then
+            RB:PopPendingAuctionBid()
+        end
+    end
+end)
 
 SLASH_REAGENTBANKUI1 = "/rbank"
 SLASH_REAGENTBANKUI2 = "/reagentbank"
