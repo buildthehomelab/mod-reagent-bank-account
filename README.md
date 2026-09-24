@@ -53,12 +53,14 @@ You can add items to the AH list from:
 - The main reagent item detail screen
 - The profession window with **Add to AH List**
 - The AH list **From Recipe** button
+- **Ctrl+Shift-click** any item: in your bags, in Auction House results, or a linked item in chat. A popup asks how many to buy
+- Dropping an item from your bags onto the AH list panel beside the Auction House
 - Slash commands
 
 Shopping list features:
 
 - Edit item amounts directly in the AH list
-- Right-click an item to change its amount
+- Right-click an item to change its amount, in the main window or the AH panel. Ctrl+Shift-clicking an item already on the list also changes its amount; enter 0 to remove it
 - Shift-right-click an item to remove it
 - Left-click an item to search for it on the Auction House
 - Print the list to chat
