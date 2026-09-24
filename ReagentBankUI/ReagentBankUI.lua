@@ -128,6 +128,8 @@ local AUCTION_BID_REPLY_TIMEOUT = 20.0
 -- Auctionator's Buy tab id and the shopping list the AH list is mirrored into.
 local AUCTIONATOR_BUY_TAB = 3
 local AUCTIONATOR_LIST_NAME = "Reagent Bank"
+-- Width Auctionator 3.x gives the list box on its Shopping Lists options page.
+local AUCTIONATOR_OPTIONS_LIST_WIDTH = 180
 local LOW_STOCK_DEFAULT_CRAFTS = 5
 
 -- Main window top action button placement.
@@ -2124,6 +2126,44 @@ function RB:SearchAuctionatorForItem(name)
     return ok
 end
 
+-- Auctionator 3.x's Shopping Lists options page anchors its list box to
+-- TOPLEFT and BOTTOM. On 3.3.5 that pair overrides the box's width and
+-- stretches it across the page, and its rows stretch with it over the Delete,
+-- Edit and Rename buttons, taking their clicks. The Edit window it opens is
+-- also fixed in place with no close button. Older Auctionators have neither
+-- frame, so this does nothing there.
+function RB:FixAuctionatorShoppingListOptions()
+    local panel = _G.Atr_ShpList_Options_Frame
+    local scroll = _G.Atr_ShpList_ScrollFrame
+    if panel and scroll and not self.auctionatorListBoxFixed then
+        self.auctionatorListBoxFixed = true
+        scroll:ClearAllPoints()
+        scroll:SetPoint("TOPLEFT", panel, "TOPLEFT", 20, -95)
+        scroll:SetPoint("BOTTOMLEFT", panel, "BOTTOMLEFT", 20, 30)
+        scroll:SetWidth(AUCTIONATOR_OPTIONS_LIST_WIDTH)
+    end
+
+    local editFrame = _G.Atr_ShpList_Edit_Frame
+    if editFrame and not self.auctionatorEditFrameFixed then
+        self.auctionatorEditFrameFixed = true
+        editFrame:SetMovable(true)
+        editFrame:SetClampedToScreen(true)
+        editFrame:RegisterForDrag("LeftButton")
+        editFrame:SetScript("OnDragStart", function(selfFrame)
+            selfFrame:StartMoving()
+        end)
+        editFrame:SetScript("OnDragStop", function(selfFrame)
+            selfFrame:StopMovingOrSizing()
+        end)
+
+        local close = self:CreateCloseButton(editFrame)
+        close:SetPoint("TOPRIGHT", -6, -6)
+        close:SetScript("OnClick", function()
+            editFrame:Hide()
+        end)
+    end
+end
+
 -- Keeps an Auctionator shopping list named "Reagent Bank" in step with the AH
 -- list, so the same items can be searched from Auctionator's own list panel.
 function RB:SyncAuctionatorShoppingList()
@@ -2207,6 +2247,16 @@ function RB:CreateAuctionShoppingFrame()
     frame:SetClampedToScreen(true)
     frame:EnableMouse(true)
     frame:SetFrameStrata("DIALOG")
+    -- Dragging only lasts until the Auction House closes;
+    -- ShowAuctionShoppingFrame docks it beside the frame on the next open.
+    frame:SetMovable(true)
+    frame:RegisterForDrag("LeftButton")
+    frame:SetScript("OnDragStart", function(selfFrame)
+        selfFrame:StartMoving()
+    end)
+    frame:SetScript("OnDragStop", function(selfFrame)
+        selfFrame:StopMovingOrSizing()
+    end)
     self:MakeBackdrop(frame)
     frame:Hide()
 
@@ -7717,8 +7767,11 @@ RB:SetScript("OnEvent", function(self, event, ...)
             self:ApplyScale()
             self:CreatePaperDollButton()
             self:CreateTradeSkillControls()
+            self:FixAuctionatorShoppingListOptions()
         elseif addonName == "Blizzard_TradeSkillUI" then
             self:CreateTradeSkillControls()
+        elseif addonName == "Auctionator" then
+            self:FixAuctionatorShoppingListOptions()
         end
     elseif event == "PLAYER_LOGIN" then
         self:NormalizeShoppingList()
@@ -7726,6 +7779,7 @@ RB:SetScript("OnEvent", function(self, event, ...)
         self:CreatePaperDollButton()
         self:CreateSettingsPanel()
         self:CreateTradeSkillControls()
+        self:FixAuctionatorShoppingListOptions()
     elseif event == "TRADE_SKILL_SHOW" then
         self:CreateTradeSkillControls()
         self:DockTradeSkillPanel()
