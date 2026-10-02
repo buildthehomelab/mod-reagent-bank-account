@@ -11,6 +11,7 @@
  *   .rbank preview deposit all
  *   .rbank preview deposit category <categoryId>
  *   .rbank check recipe <requestId> <itemEntry> <amountPerCraft> [itemEntry amountPerCraft ...]
+ *   .rbank check all <requestId>
  *   .rbank deposit all
  *   .rbank deposit category <categoryId>
  *   .rbank deposit item <itemEntry> <amount>
@@ -35,6 +36,8 @@
  *   RBANK:CHECK:BEGIN:<requestId>:<itemCount>
  *   RBANK:CHECK:ITEM:<itemEntry>:<storedAmount>
  *   RBANK:CHECK:END:<requestId>:<itemCount>
+ * "check all" answers in the same format with every stored item, so the addon can
+ * treat any item missing from it as 0 and answer profession and tooltip lookups locally.
  */
 
 #include "ReagentBankAccount.h"
@@ -1295,21 +1298,72 @@ namespace ReagentBank
         if (!handler || !player)
             return;
 
+        // One query for the whole request; the profession prefetch used to cost one
+        // blocking world-thread query per reagent.
+        std::unordered_map<uint32, uint32> storedAmounts;
+        std::ostringstream entryList;
+        bool first = true;
+        for (std::pair<uint32, uint32> const& requested : requestedItems)
+        {
+            if (!requested.first)
+                continue;
+
+            entryList << (first ? "" : ",") << requested.first;
+            first = false;
+        }
+
+        if (!first)
+        {
+            uint32 accountKey = 0;
+            uint32 guidKey = 0;
+            GetStorageKeys(player, accountKey, guidKey);
+
+            QueryResult result = CharacterDatabase.Query(
+                "SELECT item_entry, item_subclass, amount "
+                "FROM mod_reagent_bank_account "
+                "WHERE account_id = {} AND guid = {} AND item_entry IN ({})",
+                accountKey, guidKey, entryList.str());
+
+            if (result)
+            {
+                do
+                {
+                    uint32 const itemEntry = (*result)[0].Get<uint32>();
+                    uint32 const itemSubclass = (*result)[1].Get<uint32>();
+                    uint32 const amount = (*result)[2].Get<uint32>();
+
+                    if (itemEntry && amount && IsCategory(itemSubclass))
+                        storedAmounts[itemEntry] = amount;
+                } while (result->NextRow());
+            }
+        }
+
         SendProtocol(handler, Acore::StringFormat("RBANK:CHECK:BEGIN:{}:{}", requestId, uint32(requestedItems.size())));
 
         for (std::pair<uint32, uint32> const& requested : requestedItems)
         {
-            uint32 const itemEntry = requested.first;
-            uint32 storedAmount = 0;
-
-            StoredItem stored;
-            if (itemEntry && LoadStoredItem(player, itemEntry, stored))
-                storedAmount = stored.Amount;
-
-            SendProtocol(handler, Acore::StringFormat("RBANK:CHECK:ITEM:{}:{}", itemEntry, storedAmount));
+            auto const it = storedAmounts.find(requested.first);
+            uint32 const storedAmount = it != storedAmounts.end() ? it->second : 0;
+            SendProtocol(handler, Acore::StringFormat("RBANK:CHECK:ITEM:{}:{}", requested.first, storedAmount));
         }
 
         SendProtocol(handler, Acore::StringFormat("RBANK:CHECK:END:{}:{}", requestId, uint32(requestedItems.size())));
+    }
+
+    static void SendBankSnapshot(ChatHandler* handler, Player const* player, uint32 requestId)
+    {
+        if (!handler || !player)
+            return;
+
+        std::map<uint32, StoredItem> storedItems;
+        LoadStoredItems(player, storedItems);
+
+        SendProtocol(handler, Acore::StringFormat("RBANK:CHECK:BEGIN:{}:{}", requestId, uint32(storedItems.size())));
+
+        for (std::pair<uint32 const, StoredItem> const& pair : storedItems)
+            SendProtocol(handler, Acore::StringFormat("RBANK:CHECK:ITEM:{}:{}", pair.first, pair.second.Amount));
+
+        SendProtocol(handler, Acore::StringFormat("RBANK:CHECK:END:{}:{}", requestId, uint32(storedItems.size())));
     }
 
     static uint32 WithdrawExact(Player* player, StoredItem& stored, uint32 requestedAmount, bool& stoppedForBagSpace, ItemAmountMap& withdrawn)
@@ -1914,7 +1968,7 @@ namespace ReagentBank
 
     static void SendUsage(ChatHandler* handler)
     {
-        SendError(handler, "Usage: .rbank open | list <categoryId> [page] [id|name|amount|amount_asc] | preview deposit all|category <categoryId> | check recipe <requestId> <itemEntry> <amountPerCraft> [...] | deposit all|category <categoryId>|item <itemEntry> <amount>|items <itemEntry> <amount> [...] | withdraw all|category <categoryId>|item <itemEntry> <one|stack|all|exact <amount>>|needed <itemEntry> <amount> [...] | share [open|invite <name>|accept|decline|leave|kick <name>]");
+        SendError(handler, "Usage: .rbank open | list <categoryId> [page] [id|name|amount|amount_asc] | preview deposit all|category <categoryId> | check recipe <requestId> <itemEntry> <amountPerCraft> [...] | check all <requestId> | deposit all|category <categoryId>|item <itemEntry> <amount>|items <itemEntry> <amount> [...] | withdraw all|category <categoryId>|item <itemEntry> <one|stack|all|exact <amount>>|needed <itemEntry> <amount> [...] | share [open|invite <name>|accept|decline|leave|kick <name>]");
     }
 }
 
@@ -2049,9 +2103,22 @@ private:
 
         if (command == "check")
         {
+            if (tokens.size() == 3 && ReagentBank::ToLower(tokens[1]) == "all")
+            {
+                uint32 requestId = 0;
+                if (!ReagentBank::TryParseUInt32(tokens[2], requestId))
+                {
+                    ReagentBank::SendError(handler, "Invalid bank check request id.");
+                    return true;
+                }
+
+                ReagentBank::SendBankSnapshot(handler, player, requestId);
+                return true;
+            }
+
             if (tokens.size() < 5 || ReagentBank::ToLower(tokens[1]) != "recipe")
             {
-                ReagentBank::SendError(handler, "Usage: .rbank check recipe <requestId> <itemEntry> <amountPerCraft> [itemEntry amountPerCraft ...]");
+                ReagentBank::SendError(handler, "Usage: .rbank check recipe <requestId> <itemEntry> <amountPerCraft> [itemEntry amountPerCraft ...] | check all <requestId>");
                 return true;
             }
 
