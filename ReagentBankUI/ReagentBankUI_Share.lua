@@ -32,6 +32,14 @@ function RB:HandleShareProtocol(message)
 
     local kind = parts[3]
 
+    if kind == "REFRESH" or kind == "ACCEPTED" or kind == "JOINED" or kind == "LEFT" or kind == "LEFT_SELF" or kind == "KICKED" then
+        -- The bank changed outside this client's own transactions.
+        self:InvalidateBankSnapshot()
+        if self:IsProfessionWindowOpen() then
+            self:RequestBankSnapshot(true)
+        end
+    end
+
     if kind == "FEATURE" then
         self.sharingEnabled = (parts[4] == "1")
         return true

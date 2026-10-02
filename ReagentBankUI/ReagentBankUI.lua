@@ -92,9 +92,8 @@ local TRADE_SKILL_CHECK_TIMEOUT = 2.0
 local TOOLTIP_BANK_CHECK_TIMEOUT = 2.0
 local TOOLTIP_BANK_COUNT_CACHE_SECONDS = 60
 local TRADE_SKILL_SHOPPING_LIST_LIMIT = 3
-local PROFESSION_PREFETCH_PAIRS_PER_COMMAND = 15
-local PROFESSION_PREFETCH_SEND_INTERVAL = 0.3
-local PROFESSION_PREFETCH_TIMEOUT = 20.0
+local BANK_SNAPSHOT_MAX_AGE = 300
+local BANK_SNAPSHOT_REQUEST_TIMEOUT = 10.0
 local REAGENT_OVERLAY_ROW_COUNT = 8
 local REAGENT_OVERLAY_FONT_SIZE = 10
 local REAGENT_OVERLAY_GAP = 5
@@ -892,20 +891,6 @@ function RB:OnUpdate(elapsed)
         self:UpdateTradeSkillControls()
     end
 
-    if self.professionPrefetchQueue and #self.professionPrefetchQueue > 0 then
-        self:SendNextProfessionPrefetchBatch(now)
-    end
-
-    if self.professionPrefetchDeadline and now >= self.professionPrefetchDeadline then
-        -- Prefetch stalled; drop it so the per-recipe path takes over.
-        self.professionPrefetchDeadline = nil
-        self.professionPrefetchQueue = nil
-        self.professionPrefetchPending = nil
-        self.professionPrefetchOutstanding = 0
-        self.professionPrefetchKey = nil
-        self.professionPrefetchSkillCount = nil
-    end
-
     if self.pendingRefresh and now >= self.pendingRefresh.at then
         local refresh = self.pendingRefresh
         self.pendingRefresh = nil
@@ -927,7 +912,7 @@ function RB:OnUpdate(elapsed)
         self:ClearBusy("No server data yet. Press Refresh to try again.", 1.00, 0.82, 0.32)
     end
 
-    if not self.pendingRefresh and not self.busyStartedAt and not self.pendingAutoDepositAt and not self.nextItemInfoRefreshAt and not self.nextAutoDepositTickerAt and not self.professionPrefetchDeadline and not self.pendingTradeSkillBagRefreshAt then
+    if not self.pendingRefresh and not self.busyStartedAt and not self.pendingAutoDepositAt and not self.nextItemInfoRefreshAt and not self.nextAutoDepositTickerAt and not self.pendingTradeSkillBagRefreshAt then
         self:SetScript("OnUpdate", nil)
     end
 end
@@ -1009,6 +994,11 @@ function RB:CacheBankItemCount(itemEntry, amount)
 end
 
 function RB:GetCachedBankItemCount(itemEntry)
+    local snapshotAmount = self:GetBankSnapshotCount(itemEntry)
+    if snapshotAmount ~= nil then
+        return snapshotAmount
+    end
+
     itemEntry = tonumber(itemEntry)
     if not itemEntry or itemEntry <= 0 or type(self.bankItemCounts) ~= "table" then
         return nil
@@ -3403,12 +3393,11 @@ end
 -- Blizzard trade skill API.
 --
 -- provider = {
---     name = "Milling",                       -- prefetch key
+--     name = "Milling",
 --     frame = MillingFrame,                   -- host window
 --     reagentButtons = { button, ... },       -- rows that get the "+N bank" overlay
 --     GetRecipe = function() return recipeName, { { itemEntry, name, requiredPerCraft }, ... } end,
 --                 -- or return nil, errText
---     GetAllReagentEntries = function() return { itemEntry, ... } end,
 --     GetRepeatCount = function() return n end,        -- optional
 --     SetRepeatCount = function(n) end,                -- optional
 -- }
@@ -3432,21 +3421,19 @@ function RB:RegisterRecipeProvider(provider)
         RB:CreateTradeSkillControls()
         RB:AttachTradeSkillControls()
         RB:DockTradeSkillPanel()
-        RB:ResetProfessionBankPrefetch()
-        RB:PrefetchProfessionBankCounts(true)
+        RB:RequestBankSnapshot()
         -- Start from the saved prepare count and push it into the provider.
         RB:SetTradeSkillPrepareCount(RB:GetTradeSkillRepeatCount(), true)
     end)
 
     provider.frame:HookScript("OnHide", function()
         RB:AttachTradeSkillControls()
-        RB:ResetProfessionBankPrefetch()
         RB:HideReagentBankOverlays()
         RB:HandleTradeSkillClosed()
 
         -- Another provider's window is still open and now owns the sidebar.
         if RB:GetActiveRecipeProvider() then
-            RB:PrefetchProfessionBankCounts(true)
+            RB:RequestBankSnapshot()
             RB:UpdateTradeSkillControls()
         end
     end)
@@ -3884,201 +3871,92 @@ function RB:SetLowStockCraftCount(value)
     return ReagentBankUIDB.lowStockCrafts
 end
 
-function RB:ResetProfessionBankPrefetch()
-    self.professionBankCounts = nil
-    self.professionBankCountsReady = false
-    self.professionPrefetchKey = nil
-    self.professionPrefetchSkillCount = nil
-    self.professionPrefetchQueue = nil
-    self.professionPrefetchPending = nil
-    self.professionPrefetchOutstanding = 0
-    self.professionPrefetchNextSendAt = nil
-    self.professionPrefetchDeadline = nil
+-- One "check all" answers with every stored item, so profession, recipe and
+-- tooltip lookups are read from this snapshot instead of asking the server per
+-- reagent. It outlives the profession window: deposit and withdraw lines keep it
+-- current, and share changes or RetailAH bank posts (RBANK:SHARE:*) drop it.
+function RB:InvalidateBankSnapshot()
+    self.bankSnapshot = nil
+    self.bankSnapshotAt = nil
 end
 
-function RB:BuildProfessionPrefetchKey()
-    local provider = self:GetActiveRecipeProvider()
-    if provider then
-        return "provider:" .. tostring(provider.name or "external")
-    end
-
-    if not GetTradeSkillLine then
-        return ""
-    end
-
-    local skillName = GetTradeSkillLine()
-    if type(skillName) ~= "string" or skillName == "" or skillName == "UNKNOWN" then
-        return ""
-    end
-
-    return skillName
+function RB:HasFreshBankSnapshot()
+    return type(self.bankSnapshot) == "table" and self.bankSnapshotAt ~= nil
+        and GetTime() - self.bankSnapshotAt <= BANK_SNAPSHOT_MAX_AGE
 end
 
-function RB:CollectProfessionReagentEntries()
-    local provider = self:GetActiveRecipeProvider()
-    if provider then
-        if not provider.GetAllReagentEntries then
-            return nil
-        end
-
-        local seen = {}
-        local entries = {}
-        for _, rawEntry in ipairs(provider.GetAllReagentEntries() or {}) do
-            local itemEntry = tonumber(rawEntry)
-            if itemEntry and itemEntry > 0 and not seen[itemEntry] then
-                seen[itemEntry] = true
-                table.insert(entries, math.floor(itemEntry))
-            end
-        end
-        return entries, #entries
-    end
-
-    if not GetNumTradeSkills or not GetTradeSkillInfo or not GetTradeSkillNumReagents or not GetTradeSkillReagentItemLink then
+function RB:GetBankSnapshotCount(itemEntry)
+    if not self:HasFreshBankSnapshot() then
         return nil
     end
 
-    local numSkills = GetNumTradeSkills() or 0
-    if numSkills <= 0 then
+    itemEntry = tonumber(itemEntry)
+    if not itemEntry or itemEntry <= 0 then
         return nil
     end
 
-    local seen = {}
-    local entries = {}
-
-    for skillIndex = 1, numSkills do
-        local _, skillType = GetTradeSkillInfo(skillIndex)
-
-        if skillType ~= "header" then
-            local reagentCount = GetTradeSkillNumReagents(skillIndex) or 0
-
-            for reagentIndex = 1, reagentCount do
-                local link = GetTradeSkillReagentItemLink(skillIndex, reagentIndex)
-                local itemEntry = ParseItemIdFromLink(link)
-
-                if itemEntry and itemEntry > 0 and not seen[itemEntry] then
-                    seen[itemEntry] = true
-                    table.insert(entries, math.floor(itemEntry))
-                end
-            end
-        end
-    end
-
-    return entries, numSkills
+    return self.bankSnapshot[math.floor(itemEntry)] or 0
 end
 
-function RB:PrefetchProfessionBankCounts(force)
-    local key = self:BuildProfessionPrefetchKey()
-    if key == "" then
+function RB:RequestBankSnapshot(force)
+    if not force and self:HasFreshBankSnapshot() then
         return
     end
 
-    if self.professionPrefetchDeadline then
+    if self.bankSnapshotUnsupported then
         return
     end
 
-    local numSkills = 0
-    if self:GetActiveRecipeProvider() then
-        -- A provider's list doesn't grow while it's open; one prefetch per show.
-        numSkills = tonumber(self.professionPrefetchSkillCount) or 0
-    elseif GetNumTradeSkills then
-        numSkills = GetNumTradeSkills() or 0
-    end
-
-    if not force and self.professionPrefetchKey == key then
-        local covered = tonumber(self.professionPrefetchSkillCount) or 0
-        if numSkills <= covered then
+    -- A reply already on its way is at least as new as anything that made us ask again.
+    local now = GetTime()
+    if self.bankSnapshotRequestId then
+        if self.bankSnapshotRequestUntil and now < self.bankSnapshotRequestUntil then
             return
         end
-    end
 
-    local entries, collectedSkillCount = self:CollectProfessionReagentEntries()
-    if not entries or #entries == 0 then
+        -- Unanswered: the server predates "check all", so the per-recipe checks take over.
+        self.bankSnapshotRequestId = nil
+        self.bankSnapshotRequestUntil = nil
+        self.bankSnapshotUnsupported = true
         return
     end
 
-    self:ResetProfessionBankPrefetch()
-
-    self.professionPrefetchKey = key
-    self.professionPrefetchSkillCount = collectedSkillCount or numSkills
-    self.professionBankCounts = {}
-    self.professionPrefetchPending = {}
-    self.professionPrefetchQueue = {}
-
-    local batch = {}
-    for _, itemEntry in ipairs(entries) do
-        table.insert(batch, itemEntry)
-
-        if #batch >= PROFESSION_PREFETCH_PAIRS_PER_COMMAND then
-            table.insert(self.professionPrefetchQueue, batch)
-            batch = {}
-        end
+    self.bankSnapshotSerial = (tonumber(self.bankSnapshotSerial) or 800000000) + 1
+    if self.bankSnapshotSerial > 899999999 then
+        self.bankSnapshotSerial = 800000001
     end
 
-    if #batch > 0 then
-        table.insert(self.professionPrefetchQueue, batch)
-    end
-
-    self.professionPrefetchOutstanding = #self.professionPrefetchQueue
-    self.professionPrefetchNextSendAt = GetTime()
-    self.professionPrefetchDeadline = GetTime() + PROFESSION_PREFETCH_TIMEOUT
-    self:EnsureOnUpdate()
+    self.bankSnapshotRequestId = self.bankSnapshotSerial
+    self.bankSnapshotRequestUntil = now + BANK_SNAPSHOT_REQUEST_TIMEOUT
+    self:SendServerCommand("check all " .. tostring(self.bankSnapshotRequestId))
 end
 
-function RB:SendNextProfessionPrefetchBatch(now)
-    local queue = self.professionPrefetchQueue
-    if type(queue) ~= "table" or #queue == 0 then
-        return
-    end
-
-    if self.professionPrefetchNextSendAt and now < self.professionPrefetchNextSendAt then
-        return
-    end
-
-    local batch = table.remove(queue, 1)
-    self.professionPrefetchNextSendAt = now + PROFESSION_PREFETCH_SEND_INTERVAL
-
-    self.tradeSkillCheckRequestId = (tonumber(self.tradeSkillCheckRequestId) or 0) + 1
-    if self.tradeSkillCheckRequestId > 100000000 then
-        self.tradeSkillCheckRequestId = 1
-    end
-
-    local requestId = self.tradeSkillCheckRequestId
-    self.professionPrefetchPending = self.professionPrefetchPending or {}
-    self.professionPrefetchPending[requestId] = true
-
-    -- Built directly rather than through BuildItemAmountCommand, which keeps only its
-    -- first command and would silently drop the rest of the batch. The server ignores
-    -- the amount in a check, so 1 is fine.
-    local command = "check recipe " .. tostring(requestId)
-    for _, itemEntry in ipairs(batch) do
-        command = command .. " " .. tostring(itemEntry) .. " 1"
-    end
-
-    self:SendServerCommand(command)
+function RB:IsBankSnapshotPending()
+    return self.bankSnapshotRequestId ~= nil and self.bankSnapshotRequestUntil ~= nil
+        and GetTime() < self.bankSnapshotRequestUntil
 end
 
-function RB:HandleProfessionPrefetchResponse(requestId, counts)
-    if type(self.professionPrefetchPending) ~= "table" or not self.professionPrefetchPending[requestId] then
+function RB:HandleBankSnapshotResponse(requestId, counts)
+    if not self.bankSnapshotRequestId or requestId ~= self.bankSnapshotRequestId then
         return false
     end
 
-    self.professionPrefetchPending[requestId] = nil
-    self.professionBankCounts = self.professionBankCounts or {}
+    self.bankSnapshotRequestId = nil
+    self.bankSnapshotRequestUntil = nil
 
+    local snapshot = {}
     for rawEntry, rawAmount in pairs(counts or {}) do
         local itemEntry = tonumber(rawEntry)
-        if itemEntry and itemEntry > 0 then
-            self.professionBankCounts[math.floor(itemEntry)] = math.max(0, math.floor(tonumber(rawAmount) or 0))
+        local amount = math.floor(tonumber(rawAmount) or 0)
+        if itemEntry and itemEntry > 0 and amount > 0 then
+            snapshot[math.floor(itemEntry)] = amount
         end
     end
 
-    self.professionPrefetchOutstanding = math.max(0, (tonumber(self.professionPrefetchOutstanding) or 0) - 1)
+    self.bankSnapshot = snapshot
+    self.bankSnapshotAt = GetTime()
 
-    local queueEmpty = type(self.professionPrefetchQueue) ~= "table" or #self.professionPrefetchQueue == 0
-
-    if self.professionPrefetchOutstanding <= 0 and queueEmpty then
-        self.professionBankCountsReady = true
-        self.professionPrefetchDeadline = nil
+    if self:IsProfessionWindowOpen() then
         self:UpdateTradeSkillControls()
     end
 
@@ -4086,7 +3964,7 @@ function RB:HandleProfessionPrefetchResponse(requestId, counts)
 end
 
 function RB:GetProfessionBankCountsFor(reagents)
-    if not self.professionBankCountsReady or type(self.professionBankCounts) ~= "table" then
+    if not self:HasFreshBankSnapshot() then
         return nil
     end
 
@@ -4096,12 +3974,7 @@ function RB:GetProfessionBankCountsFor(reagents)
         local itemEntry = tonumber(reagent.itemEntry or reagent.entry)
         if itemEntry and itemEntry > 0 then
             itemEntry = math.floor(itemEntry)
-            local amount = self.professionBankCounts[itemEntry]
-            if amount == nil then
-                -- Recipe uses a reagent the prefetch never covered, so fall back.
-                return nil
-            end
-            counts[itemEntry] = amount
+            counts[itemEntry] = self.bankSnapshot[itemEntry] or 0
         end
     end
 
@@ -4109,7 +3982,7 @@ function RB:GetProfessionBankCountsFor(reagents)
 end
 
 function RB:AdjustProfessionBankCount(itemEntry, delta)
-    if type(self.professionBankCounts) ~= "table" then
+    if type(self.bankSnapshot) ~= "table" then
         return
     end
 
@@ -4119,12 +3992,8 @@ function RB:AdjustProfessionBankCount(itemEntry, delta)
     end
 
     itemEntry = math.floor(itemEntry)
-    local current = self.professionBankCounts[itemEntry]
-    if current == nil then
-        return
-    end
-
-    self.professionBankCounts[itemEntry] = math.max(0, current + delta)
+    local amount = math.max(0, (self.bankSnapshot[itemEntry] or 0) + delta)
+    self.bankSnapshot[itemEntry] = amount > 0 and amount or nil
 end
 
 function RB:GetTradeSkillBankCounts(reagents)
@@ -4137,7 +4006,10 @@ function RB:GetTradeSkillBankCounts(reagents)
     local ready = key ~= "" and self.tradeSkillBankCountsKey == key
 
     if not ready then
-        self:RequestTradeSkillBankCounts(reagents)
+        self:RequestBankSnapshot()
+        if not self:IsBankSnapshotPending() then
+            self:RequestTradeSkillBankCounts(reagents)
+        end
     end
 
     return ready, ready and self.tradeSkillBankCounts or {}
@@ -7492,7 +7364,7 @@ function RB:HandleProtocol(message)
             if check then
                 local requestId = tonumber(parts[4]) or check.requestId or 0
 
-                self:HandleProfessionPrefetchResponse(requestId, check.counts)
+                self:HandleBankSnapshotResponse(requestId, check.counts)
                 local pending = self.pendingTradeSkillChecks and self.pendingTradeSkillChecks[requestId] or nil
 
                 if pending then
@@ -7695,8 +7567,18 @@ function RB:HandleProtocol(message)
     return true
 end
 
+-- Every chat frame showing system messages runs the filter for the same line;
+-- handle it once (by line ID) and just hide it in the other frames.
+local lastProtocolLineId, lastProtocolMessage
+
 local function SystemMessageFilter(chatFrame, event, message, ...)
+    local lineId = select(10, ...)
+    if lineId and lineId ~= 0 and lineId == lastProtocolLineId and message == lastProtocolMessage then
+        return true
+    end
+
     if RB:HandleProtocol(message) then
+        lastProtocolLineId, lastProtocolMessage = lineId, message
         return true
     end
 
@@ -8008,17 +7890,20 @@ RB:SetScript("OnEvent", function(self, event, ...)
     elseif event == "TRADE_SKILL_SHOW" then
         self:CreateTradeSkillControls()
         self:DockTradeSkillPanel()
-        self:PrefetchProfessionBankCounts()
+        self:RequestBankSnapshot()
         self:UpdateTradeSkillControls()
     elseif event == "TRADE_SKILL_UPDATE" then
-        self:CreateTradeSkillControls()
-        self:PrefetchProfessionBankCounts()
-        self:UpdateTradeSkillControls()
+        -- Fires in bursts (opening, expanding headers, every filter keystroke, item
+        -- info arriving), so the sidebar redraws once per burst.
+        if not self.tradeSkillPanel then
+            self:CreateTradeSkillControls()
+        end
+        self:RequestBankSnapshot()
+        self:ScheduleTradeSkillBagRefresh()
     elseif event == "BAG_UPDATE" then
         self:ScheduleTradeSkillBagRefresh()
     elseif event == "TRADE_SKILL_CLOSE" then
         self.pendingTradeSkillBagRefreshAt = nil
-        self:ResetProfessionBankPrefetch()
         self:HideReagentBankOverlays()
         self:HandleTradeSkillClosed()
     elseif event == "AUCTION_HOUSE_SHOW" then
