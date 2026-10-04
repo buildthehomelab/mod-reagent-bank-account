@@ -24,6 +24,15 @@ This module adds a server-backed reagent bank for trade goods, gems, and craftin
 - Periodic auto-deposit timer (default every 300 seconds; paused while a profession window is open)
 - Character paperdoll launcher button
 
+### What counts as a reagent
+
+- Trade Goods and Gems that stack
+- Quest- and Misc-class items that a profession recipe uses, such as Black Diamond, Shoveltusk Meat and Tough Ram Meat. Each one is filed under the category of the profession that uses it most (cooking items go under Meat). You don't need to know the recipe. Potions, food and other consumables stay in your bags even when a recipe uses them
+- Anything listed in the world table `mod_reagent_bank_account_deposit_inclusions_zz_custom` (`item_entry`, `item_subclass` = bank category). It ships with Dark Iron Residue
+- Items listed in `mod_reagent_bank_account_deposit_exclusions_zz_custom` are never deposited
+
+Deposits skip any item a quest in your log asks for, so auto-deposit cannot take quest items before you turn them in.
+
 ---
 
 ## Profession Integration

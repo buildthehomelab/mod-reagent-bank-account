@@ -47,13 +47,17 @@
 #include "ChatCommand.h"
 #include "Config.h"
 #include "DatabaseEnv.h"
+#include "DBCStores.h"
 #include "Item.h"
 #include "ItemTemplate.h"
 #include "Log.h"
 #include "ObjectAccessor.h"
 #include "ObjectMgr.h"
 #include "Player.h"
+#include "QuestDef.h"
 #include "ScriptMgr.h"
+#include "SpellInfo.h"
+#include "SpellMgr.h"
 #include "StringFormat.h"
 #include "WorldSession.h"
 
@@ -78,6 +82,8 @@ bool g_reagentBankAutoMigrate = true;
 static bool g_reagentBankStorageReady = false;
 static bool g_reagentBankSharingEnabled = false;
 static std::unordered_set<uint32> g_reagentBankDepositExclusions;
+// Item entry -> bank category for items outside Trade Goods/Gems that still count as reagents.
+static std::unordered_map<uint32, uint32> g_reagentBankExtraItems;
 static std::unordered_map<uint32, uint32> g_shareOwnerByKey;
 
 using Acore::ChatCommands::ChatCommandTable;
@@ -394,6 +400,14 @@ namespace ReagentBank
             "PRIMARY KEY (`item_entry`)"
             ") ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
 
+        WorldDatabase.DirectExecute(
+            "CREATE TABLE IF NOT EXISTS `mod_reagent_bank_account_deposit_inclusions_zz_custom` ("
+            "`item_entry` INT UNSIGNED NOT NULL,"
+            "`item_subclass` INT UNSIGNED NOT NULL DEFAULT 11,"
+            "`comment` VARCHAR(255) NULL DEFAULT NULL,"
+            "PRIMARY KEY (`item_entry`)"
+            ") ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+
         CharacterDatabase.DirectExecute(
             "CREATE TABLE IF NOT EXISTS `mod_reagent_bank_share_members` ("
             "`member_key` INT UNSIGNED NOT NULL,"
@@ -457,6 +471,134 @@ namespace ReagentBank
     static bool IsDepositExcluded(uint32 itemEntry)
     {
         return itemEntry && g_reagentBankDepositExclusions.contains(itemEntry);
+    }
+
+    static uint32 GetCategoryForSkill(uint32 skillId)
+    {
+        switch (skillId)
+        {
+            case SKILL_COOKING:        return ITEM_SUBCLASS_MEAT;
+            case SKILL_JEWELCRAFTING:  return ITEM_SUBCLASS_JEWELCRAFTING;
+            case SKILL_ENCHANTING:     return ITEM_SUBCLASS_ENCHANTING;
+            case SKILL_ENGINEERING:    return ITEM_SUBCLASS_PARTS;
+            case SKILL_MINING:
+            case SKILL_BLACKSMITHING:  return ITEM_SUBCLASS_METAL_STONE;
+            case SKILL_LEATHERWORKING:
+            case SKILL_SKINNING:       return ITEM_SUBCLASS_LEATHER;
+            case SKILL_TAILORING:      return ITEM_SUBCLASS_CLOTH;
+            case SKILL_ALCHEMY:
+            case SKILL_HERBALISM:      return ITEM_SUBCLASS_HERB;
+            default:                   return ITEM_SUBCLASS_TRADE_GOODS_OTHER;
+        }
+    }
+
+    // Many classic reagents are Quest or Misc class in the item data (Black Diamond,
+    // Shoveltusk Meat, Tough Ram Meat, ...), so the Trade Goods/Gem check misses them.
+    // Any of those that a profession recipe uses counts as a reagent, filed under the
+    // profession that uses it most. Consumables stay out on purpose: potions, food and
+    // elixirs are recipe reagents too, but auto-deposit must not pull them from bags.
+    // The inclusions table adds anything else (Dark Iron Residue) and wins over this.
+    static void LoadExtraReagents()
+    {
+        g_reagentBankExtraItems.clear();
+
+        std::unordered_map<uint32, std::map<uint32, uint32>> recipesBySkill;
+        for (SkillLineAbilityEntry const* ability : sSkillLineAbilityStore)
+        {
+            SkillLineEntry const* skillLine = sSkillLineStore.LookupEntry(ability->SkillLine);
+            if (!skillLine || (skillLine->categoryId != SKILL_CATEGORY_PROFESSION && skillLine->categoryId != SKILL_CATEGORY_SECONDARY))
+                continue;
+
+            SpellInfo const* spellInfo = sSpellMgr->GetSpellInfo(ability->Spell);
+            if (!spellInfo)
+                continue;
+
+            for (int32 reagent : spellInfo->Reagent)
+            {
+                if (reagent <= 0)
+                    continue;
+
+                ItemTemplate const* proto = sObjectMgr->GetItemTemplate(uint32(reagent));
+                if (!proto || proto->GetMaxStackSize() <= 1)
+                    continue;
+
+                if (proto->Class != ITEM_CLASS_QUEST && proto->Class != ITEM_CLASS_MISC)
+                    continue;
+
+                ++recipesBySkill[proto->ItemId][ability->SkillLine];
+            }
+        }
+
+        for (auto const& [itemEntry, skills] : recipesBySkill)
+        {
+            uint32 bestSkill = 0;
+            uint32 bestCount = 0;
+            for (auto const& [skillId, count] : skills)
+            {
+                if (count > bestCount)
+                {
+                    bestSkill = skillId;
+                    bestCount = count;
+                }
+            }
+
+            g_reagentBankExtraItems[itemEntry] = GetCategoryForSkill(bestSkill);
+        }
+
+        size_t const professionCount = g_reagentBankExtraItems.size();
+        size_t inclusionCount = 0;
+
+        if (QueryResult result = WorldDatabase.Query(
+            "SELECT `item_entry`, `item_subclass` FROM `mod_reagent_bank_account_deposit_inclusions_zz_custom`"))
+        {
+            do
+            {
+                uint32 const itemEntry = (*result)[0].Get<uint32>();
+                uint32 itemSubclass = (*result)[1].Get<uint32>();
+
+                ItemTemplate const* proto = sObjectMgr->GetItemTemplate(itemEntry);
+                if (!proto || proto->GetMaxStackSize() <= 1)
+                {
+                    LOG_WARN("module", "ReagentBankAccount: inclusion item {} does not exist or does not stack, skipped.", itemEntry);
+                    continue;
+                }
+
+                if (!IsCategory(itemSubclass))
+                    itemSubclass = ITEM_SUBCLASS_TRADE_GOODS_OTHER;
+
+                g_reagentBankExtraItems[itemEntry] = itemSubclass;
+                ++inclusionCount;
+            } while (result->NextRow());
+        }
+
+        LOG_INFO("module", "ReagentBankAccount: {} profession reagent(s) outside Trade Goods and {} inclusion item(s) are bankable.",
+            professionCount, inclusionCount);
+    }
+
+    // Banking an item an active quest asks for would undo the quest's progress, or leave
+    // a completed quest unable to turn in. This matters most for the periodic auto-deposit.
+    static bool IsNeededByActiveQuest(Player const* player, uint32 itemEntry)
+    {
+        for (uint8 slot = 0; slot < MAX_QUEST_LOG_SIZE; ++slot)
+        {
+            uint32 const questId = player->GetQuestSlotQuestId(slot);
+            if (!questId)
+                continue;
+
+            QuestStatus const status = player->GetQuestStatus(questId);
+            if (status != QUEST_STATUS_INCOMPLETE && status != QUEST_STATUS_COMPLETE)
+                continue;
+
+            Quest const* quest = sObjectMgr->GetQuestTemplate(questId);
+            if (!quest)
+                continue;
+
+            for (uint8 i = 0; i < QUEST_ITEM_OBJECTIVES_COUNT; ++i)
+                if (quest->RequiredItemId[i] == itemEntry)
+                    return true;
+        }
+
+        return false;
     }
 
     static bool IsValidCharacterName(std::string const& name)
@@ -792,16 +934,24 @@ namespace ReagentBank
         if (!proto)
             return false;
 
-        if (!(proto->Class == ITEM_CLASS_TRADE_GOODS || proto->Class == ITEM_CLASS_GEM))
-            return false;
-
         if (proto->GetMaxStackSize() <= 1)
             return false;
 
         itemEntry = proto->ItemId;
-        itemSubclass = proto->Class == ITEM_CLASS_GEM ? ITEM_SUBCLASS_JEWELCRAFTING : proto->SubClass;
 
-        return IsCategory(itemSubclass);
+        if (proto->Class == ITEM_CLASS_TRADE_GOODS || proto->Class == ITEM_CLASS_GEM)
+        {
+            itemSubclass = proto->Class == ITEM_CLASS_GEM ? ITEM_SUBCLASS_JEWELCRAFTING : proto->SubClass;
+            if (IsCategory(itemSubclass))
+                return true;
+        }
+
+        auto const itr = g_reagentBankExtraItems.find(proto->ItemId);
+        if (itr == g_reagentBankExtraItems.end())
+            return false;
+
+        itemSubclass = itr->second;
+        return true;
     }
 
     static void LoadStoredItems(Player const* player, std::map<uint32, StoredItem>& items)
@@ -1017,7 +1167,7 @@ namespace ReagentBank
         if (!IsStorableReagent(item->GetTemplate(), itemEntry, itemSubclass))
             return 0;
 
-        if (IsDepositExcluded(itemEntry))
+        if (IsDepositExcluded(itemEntry) || IsNeededByActiveQuest(player, itemEntry))
             return 0;
 
         if (onlyCategory && itemSubclass != onlyCategory)
@@ -1119,7 +1269,7 @@ namespace ReagentBank
         if (!IsStorableReagent(item->GetTemplate(), itemEntry, itemSubclass))
             return 0;
 
-        if (IsDepositExcluded(itemEntry))
+        if (IsDepositExcluded(itemEntry) || IsNeededByActiveQuest(player, itemEntry))
             return 0;
 
         if (onlyCategory && itemSubclass != onlyCategory)
@@ -1223,7 +1373,7 @@ namespace ReagentBank
             if (!IsStorableReagent(proto, itemEntry, itemSubclass))
                 continue;
 
-            if (IsDepositExcluded(itemEntry))
+            if (IsDepositExcluded(itemEntry) || IsNeededByActiveQuest(player, itemEntry))
                 continue;
 
             uint32 const availableInBags = player->GetItemCount(itemEntry, false);
@@ -2539,6 +2689,7 @@ public:
         {
             ReagentBank::EnsureStorageModeMatchesConfig();
             ReagentBank::LoadDepositExclusions();
+            ReagentBank::LoadExtraReagents();
             if (g_reagentBankSharingEnabled)
                 ReagentBank::LoadShareMembers();
             g_reagentBankStorageReady = true;
@@ -2556,6 +2707,7 @@ public:
         ReagentBank::LoadConfig();
         ReagentBank::EnsureStorageModeMatchesConfig();
         ReagentBank::LoadDepositExclusions();
+        ReagentBank::LoadExtraReagents();
         if (g_reagentBankSharingEnabled)
             ReagentBank::LoadShareMembers();
         g_reagentBankStorageReady = true;
