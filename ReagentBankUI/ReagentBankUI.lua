@@ -102,20 +102,7 @@ local REAGENT_OVERLAY_GAP = 5
 -- share of the column, making room for the badge only pushes the name onto an
 -- extra line, so a badge that still will not fit is hidden instead.
 local REAGENT_NAME_MAX_RESERVE_RATIO = 0.42
-local PROFESSION_PANEL_WIDTH = 232
-local PROFESSION_PANEL_PADDING = 16
-local PROFESSION_PANEL_X = -33
-local PROFESSION_PANEL_Y = -12
-local PROFESSION_PANEL_NOTE_TOP = 216
-local PROFESSION_PANEL_MIN_HEIGHT = 344
-local PROFESSION_PRESET_BUTTON_HEIGHT = 20
-local PROFESSION_PRESET_GAP = 6
-local PROFESSION_ACTION_BUTTON_WIDTH = 140
-local PROFESSION_ACTION_BUTTON_HEIGHT = 22
 local PROFESSION_BAG_REFRESH_DELAY = 0.15
-local PROFESSION_PRESET_BATCH_COUNT = 100
-local PROFESSION_PANEL_MAX_HEIGHT = 500
-local PROFESSION_PANEL_ITEM_LIMIT = 3
 local SHOPPING_LIST_CHAT_ITEM_LIMIT = 12
 local SHOPPING_LIST_IMPORT_TIMEOUT = 10.0
 local AUCTION_SHOPPING_ROW_COUNT = 9
@@ -411,8 +398,6 @@ local function FormatBadgeCount(value)
 end
 
 local TEXT_GOOD = "7fdc7f"
-local TEXT_WARN = "ffb04a"
-local TEXT_BAD = "ff6b5e"
 local TEXT_DIM = "97a0ae"
 
 local function ColorText(text, color)
@@ -888,7 +873,7 @@ function RB:OnUpdate(elapsed)
 
     if self.pendingTradeSkillBagRefreshAt and now >= self.pendingTradeSkillBagRefreshAt then
         self.pendingTradeSkillBagRefreshAt = nil
-        self:UpdateTradeSkillControls()
+        self:UpdateReagentBankOverlays()
     end
 
     if self.pendingRefresh and now >= self.pendingRefresh.at then
@@ -1045,7 +1030,7 @@ function RB:ApplyBankCountTransaction(transaction)
     self.tradeSkillBankCountsKey = nil
 
     if (TradeSkillFrame and TradeSkillFrame:IsShown()) or self:GetActiveRecipeProvider() then
-        self:UpdateTradeSkillControls()
+        self:UpdateReagentBankOverlays()
     end
 end
 
@@ -1522,6 +1507,36 @@ function RB:FormatShoppingBought(itemEntry)
     end
 
     return ColorText("x0", TEXT_DIM)
+end
+
+-- Another auction house window (RetailAH) can show the AH shopping list itself.
+-- While its window is the one in use, the floating AH Shopping List panel stays
+-- away and row clicks search there.
+--
+-- view = {
+--     name = "RetailAH",
+--     IsActive = function() return true end,   -- its window handles this AH visit
+--     Refresh = function() end,                -- the list or a bought count changed
+--     Search = function(itemEntry) return true end,   -- optional: show the item's auctions
+-- }
+function RB:RegisterShoppingListView(view)
+    if type(view) ~= "table" or type(view.IsActive) ~= "function" then
+        return false
+    end
+
+    self.shoppingListViews = self.shoppingListViews or {}
+    table.insert(self.shoppingListViews, view)
+    return true
+end
+
+function RB:GetActiveShoppingListView()
+    for _, view in ipairs(self.shoppingListViews or {}) do
+        local ok, active = pcall(view.IsActive)
+        if ok and active then
+            return view
+        end
+    end
+    return nil
 end
 
 function RB:RefreshShoppingListViews()
@@ -2108,7 +2123,7 @@ function RB:ImportSelectedRecipeToShoppingList()
         local message = "Checking reagent bank stock. Missing AH reagents will be added when the check finishes."
         PrintAddon(message)
         self:Status(message, 1.00, 0.82, 0.32)
-        self:UpdateTradeSkillControls()
+        self:UpdateReagentBankOverlays()
         return false
     end
 
@@ -2188,6 +2203,15 @@ function RB:SearchAuctionHouseForItem(itemEntry)
         self:Status("Item info is still loading. Try again in a moment.", 1.00, 0.82, 0.32)
         self:QueueItemInfoRefresh()
         return false
+    end
+
+    local view = self:GetActiveShoppingListView()
+    if view and view.Search then
+        local ok, found = pcall(view.Search, math.floor(itemEntry))
+        if ok and found then
+            self:Status("Searching the Auction House for " .. name .. ".", 0.45, 1.00, 0.45)
+            return true
+        end
     end
 
     if not AuctionFrame or not AuctionFrame:IsShown() then
@@ -2625,6 +2649,11 @@ function RB:RefreshAuctionShoppingFrame(preservePage)
     self:NormalizeShoppingList()
     self:SyncAuctionatorShoppingList()
 
+    local view = self:GetActiveShoppingListView()
+    if view and view.Refresh then
+        pcall(view.Refresh)
+    end
+
     local frame = self.auctionShoppingFrame
     if not frame then
         return
@@ -2704,6 +2733,12 @@ function RB:ShowAuctionShoppingFrame()
         return
     end
 
+    -- That window lists the shopping list itself.
+    if self:GetActiveShoppingListView() then
+        self:HideAuctionShoppingFrame(false)
+        return
+    end
+
     self:CreateAuctionShoppingFrame()
     self:PositionAuctionShoppingFrame()
     self:RefreshAuctionShoppingFrame()
@@ -2742,7 +2777,7 @@ function RB:HandleShoppingListSlash(value)
     if tonumber(subCommand) and rest == "" then
         self:SetTradeSkillPrepareCount(tonumber(subCommand), true)
         self:PrintTradeSkillShoppingList()
-        self:UpdateTradeSkillControls()
+        self:UpdateReagentBankOverlays()
         return
     end
 
@@ -2752,7 +2787,7 @@ function RB:HandleShoppingListSlash(value)
             self:SetTradeSkillPrepareCount(count, true)
         end
         self:PrintTradeSkillShoppingList()
-        self:UpdateTradeSkillControls()
+        self:UpdateReagentBankOverlays()
         return
     end
 
@@ -3387,10 +3422,11 @@ function RB:ConfirmWithdrawPrompt()
     self:WithdrawItemExactFromPrompt(self.promptItem, amount)
 end
 
--- Other addons with their own profession window (e.g. MillingUI) can borrow the
--- profession sidebar. While the provider's frame is shown, the sidebar docks
--- beside it and reads the selected recipe from the provider instead of the
--- Blizzard trade skill API.
+-- Other addons with their own profession window (RetailProfessions, MillingUI)
+-- register it here. While the provider's frame is shown, Withdraw Needed, the
+-- shopping list import, the leftovers deposit and the "+N bank" overlays read
+-- the selected recipe and the craft count from the provider instead of the
+-- Blizzard trade skill API. The window brings its own buttons for them.
 --
 -- provider = {
 --     name = "Milling",
@@ -3407,7 +3443,7 @@ function RB:RegisterRecipeProvider(provider)
     end
 
     -- Several addons can register (e.g. MillingUI and ProspectingUI); the
-    -- sidebar follows whichever of their windows was opened last.
+    -- window opened last is the one that counts.
     self.recipeProviders = self.recipeProviders or {}
     for _, registered in ipairs(self.recipeProviders) do
         if registered.frame == provider.frame then
@@ -3418,23 +3454,18 @@ function RB:RegisterRecipeProvider(provider)
 
     provider.frame:HookScript("OnShow", function()
         RB.lastShownRecipeProvider = provider
-        RB:CreateTradeSkillControls()
-        RB:AttachTradeSkillControls()
-        RB:DockTradeSkillPanel()
         RB:RequestBankSnapshot()
-        -- Start from the saved prepare count and push it into the provider.
-        RB:SetTradeSkillPrepareCount(RB:GetTradeSkillRepeatCount(), true)
+        RB:UpdateReagentBankOverlays()
     end)
 
     provider.frame:HookScript("OnHide", function()
-        RB:AttachTradeSkillControls()
         RB:HideReagentBankOverlays()
         RB:HandleTradeSkillClosed()
 
-        -- Another provider's window is still open and now owns the sidebar.
+        -- Another provider's window is still open.
         if RB:GetActiveRecipeProvider() then
             RB:RequestBankSnapshot()
-            RB:UpdateTradeSkillControls()
+            RB:UpdateReagentBankOverlays()
         end
     end)
 
@@ -3457,7 +3488,7 @@ end
 
 -- The Blizzard trade skill window has no provider to report bag changes, and a
 -- withdraw's confirmation reaches the client before the items land in the bags,
--- so the sidebar would keep showing pre-withdraw bag counts. BAG_UPDATE fires
+-- so its "+N bank" badges would keep their pre-withdraw colours. BAG_UPDATE fires
 -- once per bag, so the redraw is batched into one.
 function RB:ScheduleTradeSkillBagRefresh()
     if self:GetActiveRecipeProvider() or not (TradeSkillFrame and TradeSkillFrame:IsShown()) then
@@ -3473,7 +3504,7 @@ end
 -- Providers call this when their selection or bags change.
 function RB:NotifyRecipeProviderChanged()
     if self:GetActiveRecipeProvider() then
-        self:UpdateTradeSkillControls()
+        self:UpdateReagentBankOverlays()
     end
 end
 
@@ -3491,7 +3522,9 @@ function RB:ClampTradeSkillPrepareCount(value)
     return value
 end
 
-function RB:GetNativeTradeSkillRepeatCount()
+-- How many crafts to prepare for: the amount in the open profession window (a
+-- provider's, or the Blizzard window's box).
+function RB:GetTradeSkillRepeatCount()
     local provider = self:GetActiveRecipeProvider()
     if provider then
         local value = provider.GetRepeatCount and tonumber(provider.GetRepeatCount())
@@ -3519,48 +3552,16 @@ function RB:GetNativeTradeSkillRepeatCount()
     return 1
 end
 
-function RB:GetTradeSkillRepeatCount()
-    if self.tradeSkillQuantityBox and self.tradeSkillQuantityBox.GetText then
-        local value = tonumber(self.tradeSkillQuantityBox:GetText())
-        if value and value > 0 then
-            return self:ClampTradeSkillPrepareCount(value)
-        end
-    end
-
-    ReagentBankUIDB = ReagentBankUIDB or {}
-    local saved = tonumber(ReagentBankUIDB.tradeSkillPrepareCount)
-    if saved and saved > 0 then
-        return self:ClampTradeSkillPrepareCount(saved)
-    end
-
-    return self:GetNativeTradeSkillRepeatCount()
-end
-
+-- Sets that amount (/rbank craft 5 does), when updateNative says to.
 function RB:SetTradeSkillPrepareCount(value, updateNative)
     value = self:ClampTradeSkillPrepareCount(value)
-
-    ReagentBankUIDB = ReagentBankUIDB or {}
-    ReagentBankUIDB.tradeSkillPrepareCount = value
-
-    if self.tradeSkillQuantityBox and self.tradeSkillQuantityBox.GetText then
-        local textValue = tostring(value)
-        if self.tradeSkillQuantityBox:GetText() ~= textValue then
-            self.suppressTradeSkillQuantityChanged = true
-            self.tradeSkillQuantityBox:SetText(textValue)
-            self.suppressTradeSkillQuantityChanged = nil
-        end
-    end
 
     if updateNative then
         self:SyncNativeTradeSkillRepeatCount(value)
     end
 
-    self:UpdateTradeSkillControls()
+    self:UpdateReagentBankOverlays()
     return value
-end
-
-function RB:NormalizeTradeSkillQuantityBox(updateNative)
-    return self:SetTradeSkillPrepareCount(self:GetTradeSkillRepeatCount(), updateNative)
 end
 
 function RB:SyncNativeTradeSkillRepeatCount(value)
@@ -3579,15 +3580,11 @@ function RB:SyncNativeTradeSkillRepeatCount(value)
         return
     end
 
-    self.suppressNativeTradeSkillQuantityChanged = true
-
     if input.SetNumber then
         input:SetNumber(value)
     elseif input.SetText then
         input:SetText(tostring(value))
     end
-
-    self.suppressNativeTradeSkillQuantityChanged = nil
 end
 
 function RB:GetSelectedProviderReagents(provider)
@@ -3758,106 +3755,10 @@ function RB:RequestTradeSkillBankCounts(reagents)
     end
 end
 
-function RB:GetTradeSkillCraftability(reagents, repeatCount)
-    local bankCounts = self:GetProfessionBankCountsFor(reagents)
-    local bankCountsReady = bankCounts ~= nil
-
-    if not bankCountsReady then
-        local key = self:BuildTradeSkillReagentKey(reagents)
-        bankCountsReady = key ~= "" and self.tradeSkillBankCountsKey == key
-        bankCounts = bankCountsReady and self.tradeSkillBankCounts or {}
-    end
-
-    local bagCrafts = nil
-    local bankCrafts = nil
-    local combinedCrafts = nil
-    local missingTypes = 0
-
-    repeatCount = self:ClampTradeSkillPrepareCount(repeatCount or 1)
-
-    for _, reagent in ipairs(reagents or {}) do
-        local itemEntry = tonumber(reagent.itemEntry or reagent.entry)
-        local requiredPerCraft = math.floor(tonumber(reagent.requiredPerCraft) or 0)
-
-        if itemEntry and itemEntry > 0 and requiredPerCraft > 0 then
-            local bagCount = 0
-            if GetItemCount then
-                bagCount = tonumber(GetItemCount(itemEntry, false)) or 0
-            end
-
-            if (not bagCount or bagCount <= 0) and reagent.bagCount then
-                bagCount = tonumber(reagent.bagCount) or 0
-            end
-
-            local bankCount = tonumber(bankCounts and bankCounts[itemEntry]) or 0
-            local fromBags = math.floor(bagCount / requiredPerCraft)
-            local fromBank = math.floor(bankCount / requiredPerCraft)
-            local fromCombined = math.floor((bagCount + bankCount) / requiredPerCraft)
-
-            if bagCrafts == nil or fromBags < bagCrafts then
-                bagCrafts = fromBags
-            end
-
-            if bankCountsReady then
-                if bankCrafts == nil or fromBank < bankCrafts then
-                    bankCrafts = fromBank
-                end
-
-                if combinedCrafts == nil or fromCombined < combinedCrafts then
-                    combinedCrafts = fromCombined
-                end
-
-                if bagCount + bankCount < requiredPerCraft * repeatCount then
-                    missingTypes = missingTypes + 1
-                end
-            end
-        end
-    end
-
-    if bagCrafts == nil then
-        bagCrafts = 0
-    end
-
-    if bankCountsReady and bankCrafts == nil then
-        bankCrafts = 0
-    end
-
-    if combinedCrafts == nil then
-        combinedCrafts = bagCrafts
-    end
-
-    return {
-        bankReady = bankCountsReady,
-        bankCrafts = bankCrafts,
-        bagCrafts = bagCrafts,
-        combinedCrafts = combinedCrafts,
-        missingTypes = missingTypes,
-    }
-end
-
 -- The same figure the panel headlines as "N craftable": how many crafts bags
 -- and bank cover between them, capped by the scarcest reagent. Returns nil
 -- while bank counts are still arriving, so Max cannot hand back a bags-only
 -- number that is about to change under the player.
-function RB:GetMaxCraftableCount()
-    local reagents, errText = self:GetSelectedTradeSkillReagents()
-    if errText or not reagents or #reagents == 0 then
-        return nil
-    end
-
-    local craftability = self:GetTradeSkillCraftability(reagents, self:GetTradeSkillRepeatCount())
-    if not craftability or not craftability.bankReady then
-        return nil
-    end
-
-    local combined = math.floor(tonumber(craftability.combinedCrafts) or 0)
-    if combined < TRADE_SKILL_PREPARE_COUNT_MIN then
-        return nil
-    end
-
-    return self:ClampTradeSkillPrepareCount(combined)
-end
-
 function RB:GetLowStockCraftCount()
     ReagentBankUIDB = ReagentBankUIDB or {}
     return self:ClampTradeSkillPrepareCount(tonumber(ReagentBankUIDB.lowStockCrafts) or LOW_STOCK_DEFAULT_CRAFTS)
@@ -3866,7 +3767,7 @@ end
 function RB:SetLowStockCraftCount(value)
     ReagentBankUIDB = ReagentBankUIDB or {}
     ReagentBankUIDB.lowStockCrafts = self:ClampTradeSkillPrepareCount(value or LOW_STOCK_DEFAULT_CRAFTS)
-    self:UpdateTradeSkillControls()
+    self:UpdateReagentBankOverlays()
     PrintAddon("low-stock alerts check enough reagents for " .. tostring(ReagentBankUIDB.lowStockCrafts) .. " craft(s).")
     return ReagentBankUIDB.lowStockCrafts
 end
@@ -3956,8 +3857,11 @@ function RB:HandleBankSnapshotResponse(requestId, counts)
     self.bankSnapshot = snapshot
     self.bankSnapshotAt = GetTime()
 
+    -- An Add to AH List that was waiting on bank counts can go ahead now.
+    self:CompletePendingShoppingListImport()
+
     if self:IsProfessionWindowOpen() then
-        self:UpdateTradeSkillControls()
+        self:UpdateReagentBankOverlays()
     end
 
     return true
@@ -4269,6 +4173,16 @@ function RB:GetReagentBankCountsForOverlay(reagents)
     return nil
 end
 
+-- The Blizzard trade skill window's badges follow its selection.
+function RB:HookTradeSkillSelection()
+    if hooksecurefunc and TradeSkillFrame_SetSelection and not self.tradeSkillSelectionHooked then
+        hooksecurefunc("TradeSkillFrame_SetSelection", function()
+            RB:UpdateReagentBankOverlays()
+        end)
+        self.tradeSkillSelectionHooked = true
+    end
+end
+
 function RB:UpdateReagentBankOverlays()
     local provider = self:GetActiveRecipeProvider()
     if provider then
@@ -4341,7 +4255,7 @@ function RB:UpdateReagentBankOverlays()
                     -- Size the badge to the text it is actually showing, then
                     -- claim that much plus a gap. A badge the column cannot
                     -- spare room for is dropped rather than printed against the
-                    -- reagent name; the sidebar still lists the same amount.
+                    -- reagent name.
                     local badgeWidth = 0
                     if overlay.GetStringWidth then
                         badgeWidth = math.ceil(tonumber(overlay:GetStringWidth()) or 0)
@@ -4367,144 +4281,6 @@ function RB:UpdateReagentBankOverlays()
             self:SetReagentNameReserved(row, 0)
         end
     end
-end
-
-function RB:UpdateProfessionPanelHeight()
-    local panel = self.tradeSkillPanel
-    if not panel or not self.tradeSkillStatsText then
-        return
-    end
-
-    local textHeight = 0
-    if self.tradeSkillStatsText.GetStringHeight then
-        textHeight = tonumber(self.tradeSkillStatsText:GetStringHeight()) or 0
-    end
-
-    -- GetStringHeight is the only wrap-aware measure available, but it reports a
-    -- single line on some clients. Counting the explicit line breaks gives a
-    -- floor so a long plan never spills past the panel border.
-    local lineCount = 1
-    for _ in string.gmatch(self.tradeSkillStatsText:GetText() or "", "\n") do
-        lineCount = lineCount + 1
-    end
-    textHeight = math.max(textHeight, lineCount * 14)
-
-    local noteHeight = 0
-    if panel.craftNote and panel.craftNote.GetStringHeight then
-        noteHeight = tonumber(panel.craftNote:GetStringHeight()) or 0
-    end
-
-    local height = PROFESSION_PANEL_NOTE_TOP + noteHeight + 10 + textHeight + 14
-    panel:SetHeight(Clamp(height, PROFESSION_PANEL_MIN_HEIGHT, PROFESSION_PANEL_MAX_HEIGHT))
-end
-
-function RB:SetProfessionCraftableStat(value, label, note, r, g, b)
-    local panel = self.tradeSkillPanel
-    if not panel then
-        return
-    end
-
-    if panel.craftValue then
-        panel.craftValue:SetText(tostring(value or "-"))
-        panel.craftValue:SetTextColor(r or 1.00, g or 0.82, b or 0.28)
-    end
-
-    if panel.craftLabel then
-        panel.craftLabel:SetText(label or "")
-    end
-
-    if panel.craftNote then
-        panel.craftNote:SetText(note or "")
-    end
-end
-
-function RB:UpdateTradeSkillStatsText()
-    if not self.tradeSkillStatsText then
-        return
-    end
-
-    local reagents, errText, recipeName, repeatCount = self:GetSelectedTradeSkillReagents()
-
-    if errText then
-        self:SetProfessionCraftableStat("-", "", "", 0.62, 0.65, 0.70)
-        self.tradeSkillStatsText:SetText(ColorText(errText, TEXT_DIM))
-        self.tradeSkillStatsText:Show()
-        self:UpdateProfessionPanelHeight()
-        return
-    end
-
-    if not reagents or #reagents == 0 then
-        self:SetProfessionCraftableStat("-", "", "", 0.62, 0.65, 0.70)
-        self.tradeSkillStatsText:SetText(ColorText("This recipe has no tracked reagents.", TEXT_DIM))
-        self.tradeSkillStatsText:Show()
-        self:UpdateProfessionPanelHeight()
-        return
-    end
-
-    repeatCount = self:ClampTradeSkillPrepareCount(repeatCount or 1)
-
-    local plan = self:BuildTradeSkillShoppingPlan(reagents, repeatCount, self:GetLowStockCraftCount())
-    local craftability = self:GetTradeSkillCraftability(reagents, repeatCount)
-    local bags = craftability and tonumber(craftability.bagCrafts) or 0
-
-    if craftability and craftability.bankReady then
-        local combined = tonumber(craftability.combinedCrafts) or bags
-        local note
-
-        if combined > bags then
-            note = "bags cover " .. tostring(bags) .. ", the bank adds " .. tostring(combined - bags) .. "."
-        elseif combined > 0 then
-            note = "all from bags, the bank adds nothing."
-        else
-            note = "bags and bank together are short a reagent."
-        end
-
-        if combined > 0 then
-            self:SetProfessionCraftableStat(combined, "craftable", note, 0.48, 0.92, 0.48)
-        else
-            self:SetProfessionCraftableStat(0, "craftable", note, 1.00, 0.42, 0.37)
-        end
-    else
-        self:SetProfessionCraftableStat(bags, "from bags", "Reading reagent bank stock...", 1.00, 0.82, 0.28)
-    end
-
-    local lines = {}
-
-    local function AddBlock(heading, body, color)
-        table.insert(lines, ColorText(heading, color) .. "  " .. tostring(body or ""))
-    end
-
-    local countText = "x" .. tostring(repeatCount)
-
-    if not plan.bankReady then
-        if #plan.needs > 0 then
-            AddBlock("Short " .. countText,
-                self:FormatTradeSkillPlanItems(plan.needs, PROFESSION_PANEL_ITEM_LIMIT), TEXT_WARN)
-        else
-            AddBlock("Ready " .. countText, "bags already cover this craft.", TEXT_GOOD)
-        end
-    elseif #plan.withdraw > 0 then
-        AddBlock("Withdraw " .. countText,
-            self:FormatTradeSkillPlanItems(plan.withdraw, PROFESSION_PANEL_ITEM_LIMIT), TEXT_GOOD)
-    elseif #plan.needs == 0 then
-        AddBlock("Ready " .. countText, "bags already cover this craft.", TEXT_GOOD)
-    else
-        AddBlock("Short " .. countText, "the reagent bank cannot cover it.", TEXT_BAD)
-    end
-
-    if plan.bankReady and #plan.missing > 0 then
-        AddBlock("Buy",
-            self:FormatTradeSkillPlanItems(plan.missing, PROFESSION_PANEL_ITEM_LIMIT), TEXT_BAD)
-    end
-
-    if plan.bankReady and #plan.lowStock > 0 then
-        AddBlock("Low under x" .. tostring(plan.lowStockCrafts),
-            self:FormatTradeSkillPlanItems(plan.lowStock, PROFESSION_PANEL_ITEM_LIMIT), TEXT_WARN)
-    end
-
-    self.tradeSkillStatsText:SetText(table.concat(lines, "\n"))
-    self.tradeSkillStatsText:Show()
-    self:UpdateProfessionPanelHeight()
 end
 
 function RB:PrintTradeSkillShoppingList()
@@ -4872,6 +4648,22 @@ function RB:ReverseLastTransaction()
     self:ScheduleCurrentRefresh(MUTATION_REFRESH_DELAY)
 end
 
+function RB:GetAutoDepositLeftovers()
+    ReagentBankUIDB = ReagentBankUIDB or {}
+    return ReagentBankUIDB.autoDepositLeftovers and true or false
+end
+
+-- Turning it off also drops a deposit already armed by Withdraw Needed.
+function RB:SetAutoDepositLeftovers(enabled)
+    ReagentBankUIDB = ReagentBankUIDB or {}
+    ReagentBankUIDB.autoDepositLeftovers = enabled and true or false
+
+    if not ReagentBankUIDB.autoDepositLeftovers then
+        self.pendingAutoDepositLeftovers = nil
+        self.pendingAutoDepositAt = nil
+    end
+end
+
 function RB:ArmAutoDepositLeftovers(needs, recipeName, repeatCount)
     ReagentBankUIDB = ReagentBankUIDB or {}
 
@@ -4984,7 +4776,7 @@ function RB:WithdrawNeededForSelectedRecipe()
         tostring(repeatCount) .. " craft(s) of " .. tostring(recipeName or "selected recipe") .. "."
     )
 
-    self:UpdateTradeSkillControls()
+    self:UpdateReagentBankOverlays()
 end
 
 function RB:DepositPreparedLeftovers()
@@ -5011,7 +4803,7 @@ function RB:DepositPreparedLeftovers()
 end
 
 function RB:HandleTradeSkillClosed()
-    self:UpdateTradeSkillControls()
+    self:UpdateReagentBankOverlays()
     self:ResumeAutoDepositTickerAfterProfession()
 
     local pending = self.pendingAutoDepositLeftovers
@@ -5325,472 +5117,6 @@ function RB:CreatePaperDollButton()
         end)
         parent.ReagentBankUIPositionHooked = true
     end
-end
-
-function RB:UpdateTradeSkillControls()
-    if not self.tradeSkillButton then
-        return
-    end
-
-    ReagentBankUIDB = ReagentBankUIDB or {}
-
-    local needs, errText, recipeName, repeatCount = self:GetSelectedTradeSkillNeeds()
-    repeatCount = self:ClampTradeSkillPrepareCount(repeatCount or 1)
-
-    local enabled = errText == nil
-
-    self:SetButtonEnabled(self.tradeSkillButton, enabled)
-    self:SetButtonEnabled(self.tradeSkillMinusButton, repeatCount > TRADE_SKILL_PREPARE_COUNT_MIN)
-    self:SetButtonEnabled(self.tradeSkillPlusButton, repeatCount < TRADE_SKILL_PREPARE_COUNT_MAX)
-
-    if self.tradeSkillPresetButtons then
-        for _, presetButton in ipairs(self.tradeSkillPresetButtons) do
-            self:SetButtonEnabled(presetButton, enabled)
-        end
-    end
-
-    if self.tradeSkillMaxButton then
-        local maxCrafts = enabled and self:GetMaxCraftableCount() or nil
-
-        self:SetButtonEnabled(self.tradeSkillMaxButton, maxCrafts ~= nil)
-
-        if maxCrafts then
-            self.tradeSkillMaxButton.tooltipText =
-                "Prepare " .. tostring(maxCrafts) .. " craft(s), everything your bags and reagent bank cover between them."
-        elseif enabled then
-            self.tradeSkillMaxButton.tooltipText =
-                "Waiting on reagent bank counts, or no reagent is stocked well enough for a full craft."
-        else
-            self.tradeSkillMaxButton.tooltipText = errText or "Select a recipe first."
-        end
-    end
-
-    local shoppingPending = self.pendingShoppingListImport ~= nil
-    if shoppingPending and self.pendingShoppingListImport.createdAt and GetTime() - self.pendingShoppingListImport.createdAt > SHOPPING_LIST_IMPORT_TIMEOUT then
-        self.pendingShoppingListImport = nil
-        shoppingPending = false
-    end
-
-    local shoppingEnabled = enabled and needs and #needs > 0 and not shoppingPending
-    self:SetButtonEnabled(self.tradeSkillShoppingButton, shoppingEnabled)
-
-    if self.tradeSkillShoppingButton then
-        if shoppingPending then
-            self.tradeSkillShoppingButton:SetText("Adding...")
-            self.tradeSkillShoppingButton.tooltipText = "Waiting for reagent bank counts, then missing AH reagents will be added to your shopping list."
-        else
-            self.tradeSkillShoppingButton:SetText("Add to AH List")
-            if errText then
-                self.tradeSkillShoppingButton.tooltipText = errText
-            elseif needs and #needs > 0 then
-                self.tradeSkillShoppingButton.tooltipText =
-                    "Add reagents for " .. tostring(repeatCount) .. " craft(s) of " .. tostring(recipeName or "selected recipe") ..
-                    " that your bags and reagent bank cannot cover."
-            else
-                self.tradeSkillShoppingButton.tooltipText =
-                    "You already have the selected recipe reagents in your bags for " .. tostring(repeatCount) .. " craft(s)."
-            end
-        end
-    end
-
-    if self.tradeSkillQuantityBox and not self.tradeSkillQuantityBox:HasFocus() then
-        local textValue = tostring(repeatCount)
-        if self.tradeSkillQuantityBox:GetText() ~= textValue then
-            self.suppressTradeSkillQuantityChanged = true
-            self.tradeSkillQuantityBox:SetText(textValue)
-            self.suppressTradeSkillQuantityChanged = nil
-        end
-    end
-
-    if needs and #needs > 0 then
-        local total = 0
-        for _, need in ipairs(needs) do
-            total = total + (tonumber(need.amount) or 0)
-        end
-
-        if repeatCount > 1 then
-            self.tradeSkillButton:SetText("Withdraw x" .. tostring(repeatCount))
-            self.tradeSkillButton.tooltipText =
-                "Prepare " .. tostring(repeatCount) .. " craft(s) of " .. tostring(recipeName or "selected recipe") ..
-                " by withdrawing " .. tostring(total) .. " missing reagent(s)."
-        else
-            self.tradeSkillButton:SetText("Withdraw Needed")
-            self.tradeSkillButton.tooltipText =
-                "Withdraw " .. tostring(total) .. " missing reagent(s) for " .. tostring(recipeName or "selected recipe") .. "."
-        end
-    else
-        if repeatCount > 1 then
-            self.tradeSkillButton:SetText("Ready x" .. tostring(repeatCount))
-        else
-            self.tradeSkillButton:SetText("Withdraw Needed")
-        end
-
-        if errText then
-            self.tradeSkillButton.tooltipText = errText
-        else
-            self.tradeSkillButton.tooltipText =
-                "You already have the selected recipe reagents in your bags for " .. tostring(repeatCount) .. " craft(s)."
-        end
-    end
-
-    if self.tradeSkillAutoDepositCheck then
-        self.tradeSkillAutoDepositCheck:SetChecked(ReagentBankUIDB.autoDepositLeftovers and true or false)
-    end
-
-    self:UpdateTradeSkillStatsText()
-    self:UpdateReagentBankOverlays()
-end
-
--- The sidebar sits on the Blizzard trade skill window or on a registered
--- provider's window, whichever is open. It is only re-docked when its host
--- changes, so a panel the player dragged stays put while that window is open.
-function RB:GetTradeSkillControlsHost()
-    local provider = self:GetActiveRecipeProvider()
-    return provider and provider.frame or _G.TradeSkillFrame
-end
-
-function RB:AttachTradeSkillControls()
-    local panel = self.tradeSkillPanel
-    local host = self:GetTradeSkillControlsHost()
-    if not panel or not host or panel:GetParent() == host then
-        return
-    end
-
-    panel:SetParent(host)
-    panel:SetFrameLevel((host:GetFrameLevel() or 1) + 5)
-    self:DockTradeSkillPanel()
-end
-
-function RB:CreateTradeSkillControls()
-    if self.tradeSkillPanel then
-        self:AttachTradeSkillControls()
-        self:UpdateTradeSkillControls()
-        return
-    end
-
-    local parent = self:GetTradeSkillControlsHost()
-    if not parent then
-        return
-    end
-
-    -- Everything lives in one bordered sidebar docked to the profession window.
-    -- The controls used to chain off TradeSkillCreateButton, which pushed them
-    -- past the frame edge and left the summary text a column too narrow to read.
-    local panel = CreateFrame("Frame", "ReagentBankUIProfessionPanel", parent)
-    panel:SetWidth(PROFESSION_PANEL_WIDTH)
-    panel:SetHeight(PROFESSION_PANEL_MIN_HEIGHT)
-    panel:SetPoint("TOPLEFT", parent, "TOPRIGHT", PROFESSION_PANEL_X, PROFESSION_PANEL_Y)
-    panel:SetFrameLevel((parent:GetFrameLevel() or 1) + 5)
-    panel:EnableMouse(true)
-    -- Dragging and closing only last until the profession window closes;
-    -- DockTradeSkillPanel puts it back beside the frame on the next open.
-    panel:SetMovable(true)
-    panel:SetClampedToScreen(true)
-    panel:RegisterForDrag("LeftButton")
-    panel:SetScript("OnDragStart", function(selfPanel)
-        selfPanel:StartMoving()
-    end)
-    panel:SetScript("OnDragStop", function(selfPanel)
-        selfPanel:StopMovingOrSizing()
-    end)
-    self:MakeBackdrop(panel)
-    self.tradeSkillPanel = panel
-
-    local inset = PROFESSION_PANEL_PADDING
-    local contentWidth = PROFESSION_PANEL_WIDTH - (inset * 2)
-
-    panel.title = panel:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    panel.title:SetPoint("TOPLEFT", inset, -16)
-    panel.title:SetJustifyH("LEFT")
-    panel.title:SetText("Reagent Bank")
-
-    panel.close = self:CreateCloseButton(panel)
-    panel.close:SetPoint("TOPRIGHT", -4, -4)
-    panel.close:SetScript("OnClick", function()
-        panel:Hide()
-    end)
-    panel.close:SetScript("OnEnter", function(selfButton)
-        GameTooltip:SetOwner(selfButton, "ANCHOR_RIGHT")
-        GameTooltip:SetText("Hide Reagent Bank", 1, 0.82, 0)
-        GameTooltip:AddLine("Comes back the next time you open a profession.", 1, 1, 1, true)
-        GameTooltip:Show()
-    end)
-    panel.close:SetScript("OnLeave", HideTooltip)
-
-    panel.titleLine = panel:CreateTexture(nil, "ARTWORK")
-    panel.titleLine:SetTexture("Interface\\ChatFrame\\ChatFrameBackground")
-    panel.titleLine:SetPoint("TOPLEFT", inset, -34)
-    panel.titleLine:SetPoint("TOPRIGHT", -inset, -34)
-    panel.titleLine:SetHeight(1)
-    SetTextureColor(panel.titleLine, DIVIDER_COLOR)
-
-    local quantityLabel = panel:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    quantityLabel:SetPoint("LEFT", panel, "TOPLEFT", inset, -52)
-    quantityLabel:SetJustifyH("LEFT")
-    quantityLabel:SetText("Crafts")
-    self.tradeSkillQuantityLabel = quantityLabel
-
-    local plusButton = self:CreateButton(panel, 22, 22, "+")
-    plusButton:SetPoint("TOPRIGHT", -inset, -41)
-    plusButton:SetScript("OnClick", function()
-        RB:SetTradeSkillPrepareCount(RB:GetTradeSkillRepeatCount() + 1, true)
-    end)
-    plusButton:SetScript("OnEnter", function(selfButton)
-        GameTooltip:SetOwner(selfButton, "ANCHOR_RIGHT")
-        GameTooltip:SetText("Increase prepare count", 1, 0.82, 0)
-        GameTooltip:Show()
-    end)
-    plusButton:SetScript("OnLeave", HideTooltip)
-    self.tradeSkillPlusButton = plusButton
-
-    local quantityBox = CreateFrame("EditBox", "ReagentBankUIPrepareCountBox", panel, "InputBoxTemplate")
-    quantityBox:SetWidth(40)
-    quantityBox:SetHeight(20)
-    quantityBox:SetAutoFocus(false)
-    quantityBox:SetNumeric(true)
-    quantityBox:SetJustifyH("CENTER")
-    quantityBox:SetPoint("RIGHT", plusButton, "LEFT", -8, 0)
-    quantityBox:SetScript("OnEscapePressed", function(selfBox)
-        RB:NormalizeTradeSkillQuantityBox(false)
-        selfBox:ClearFocus()
-    end)
-    quantityBox:SetScript("OnEnterPressed", function(selfBox)
-        RB:NormalizeTradeSkillQuantityBox(true)
-        selfBox:ClearFocus()
-        RB:WithdrawNeededForSelectedRecipe()
-    end)
-    quantityBox:SetScript("OnEditFocusLost", function()
-        RB:NormalizeTradeSkillQuantityBox(false)
-    end)
-    quantityBox:SetScript("OnTextChanged", function(selfBox)
-        if RB.suppressTradeSkillQuantityChanged then
-            return
-        end
-
-        local value = tonumber(selfBox:GetText())
-        if value and value > 0 then
-            ReagentBankUIDB = ReagentBankUIDB or {}
-            ReagentBankUIDB.tradeSkillPrepareCount = RB:ClampTradeSkillPrepareCount(value)
-        end
-
-        RB:UpdateTradeSkillControls()
-    end)
-    quantityBox:SetScript("OnEnter", function(selfBox)
-        GameTooltip:SetOwner(selfBox, "ANCHOR_RIGHT")
-        GameTooltip:SetText("Prepare count", 1, 0.82, 0)
-        GameTooltip:AddLine("Number of times to prepare the selected recipe's reagents. Press Enter here to withdraw needed reagents.", 1, 1, 1, true)
-        GameTooltip:Show()
-    end)
-    quantityBox:SetScript("OnLeave", HideTooltip)
-    self.tradeSkillQuantityBox = quantityBox
-
-    local minusButton = self:CreateButton(panel, 22, 22, "-")
-    minusButton:SetPoint("RIGHT", quantityBox, "LEFT", -8, 0)
-    minusButton:SetScript("OnClick", function()
-        RB:SetTradeSkillPrepareCount(RB:GetTradeSkillRepeatCount() - 1, true)
-    end)
-    minusButton:SetScript("OnEnter", function(selfButton)
-        GameTooltip:SetOwner(selfButton, "ANCHOR_RIGHT")
-        GameTooltip:SetText("Decrease prepare count", 1, 0.82, 0)
-        GameTooltip:Show()
-    end)
-    minusButton:SetScript("OnLeave", HideTooltip)
-    self.tradeSkillMinusButton = minusButton
-
-    ReagentBankUIDB = ReagentBankUIDB or {}
-    local initialCount = tonumber(ReagentBankUIDB.tradeSkillPrepareCount) or self:GetNativeTradeSkillRepeatCount() or 1
-    self:SetTradeSkillPrepareCount(initialCount, false)
-
-    -- Presets only move the Crafts count. Withdraw Needed stays a separate,
-    -- deliberate click, so a large pull is always previewed in the plan summary
-    -- first -- withdrawing does not check free bag space.
-    local presetWidth = math.floor((contentWidth - (PROFESSION_PRESET_GAP * 2)) / 3)
-    self.tradeSkillPresetButtons = {}
-
-    local presets = {
-        {
-            label = "x1",
-            tooltip = "Back to a single craft.",
-            count = function() return TRADE_SKILL_PREPARE_COUNT_MIN end,
-        },
-        {
-            label = "x" .. tostring(PROFESSION_PRESET_BATCH_COUNT),
-            tooltip = "Prepare " .. tostring(PROFESSION_PRESET_BATCH_COUNT) .. " crafts. Anything your bags and bank cannot cover shows up under Buy.",
-            count = function() return PROFESSION_PRESET_BATCH_COUNT end,
-        },
-        {
-            label = "Max",
-            tooltip = "Prepare as many crafts as your bags and reagent bank can cover between them.",
-            count = function() return RB:GetMaxCraftableCount() end,
-        },
-    }
-
-    for presetIndex, preset in ipairs(presets) do
-        local presetButton = self:CreateButton(panel, presetWidth, PROFESSION_PRESET_BUTTON_HEIGHT, preset.label)
-
-        if presetIndex == 1 then
-            presetButton:SetPoint("TOPLEFT", inset, -67)
-        else
-            presetButton:SetPoint("LEFT", self.tradeSkillPresetButtons[presetIndex - 1], "RIGHT", PROFESSION_PRESET_GAP, 0)
-        end
-
-        presetButton.tooltipTitle = preset.label == "Max" and "Max craftable" or ("Prepare " .. preset.label)
-        presetButton.tooltipText = preset.tooltip
-
-        presetButton:SetScript("OnClick", function()
-            local count = preset.count()
-            if count then
-                RB:SetTradeSkillPrepareCount(count, true)
-            end
-        end)
-        presetButton:SetScript("OnEnter", function(selfButton)
-            GameTooltip:SetOwner(selfButton, "ANCHOR_RIGHT")
-            GameTooltip:SetText(selfButton.tooltipTitle or "Prepare count", 1, 0.82, 0)
-            GameTooltip:AddLine(selfButton.tooltipText or "", 1, 1, 1, true)
-            GameTooltip:Show()
-        end)
-        presetButton:SetScript("OnLeave", HideTooltip)
-
-        self.tradeSkillPresetButtons[presetIndex] = presetButton
-    end
-
-    self.tradeSkillMaxButton = self.tradeSkillPresetButtons[3]
-
-    local button = self:CreateButton(panel, PROFESSION_ACTION_BUTTON_WIDTH, PROFESSION_ACTION_BUTTON_HEIGHT, "Withdraw Needed")
-    button:SetPoint("TOP", panel, "TOP", 0, -95)
-    button:SetScript("OnClick", function()
-        RB:WithdrawNeededForSelectedRecipe()
-    end)
-    button:SetScript("OnEnter", function(selfButton)
-        GameTooltip:SetOwner(selfButton, "ANCHOR_RIGHT")
-        GameTooltip:SetText("Reagent Bank", 1, 0.82, 0)
-        GameTooltip:AddLine(selfButton.tooltipText or "Withdraw missing reagents for the selected recipe.", 1, 1, 1, true)
-        GameTooltip:AddLine("Set the Crafts box above to prepare multiple crafts in one click.", 0.82, 0.82, 0.82, true)
-        GameTooltip:Show()
-    end)
-    button:SetScript("OnLeave", HideTooltip)
-    self.tradeSkillButton = button
-
-    local shoppingButton = self:CreateButton(panel, PROFESSION_ACTION_BUTTON_WIDTH, PROFESSION_ACTION_BUTTON_HEIGHT, "Add to AH List")
-    shoppingButton:SetPoint("TOP", button, "BOTTOM", 0, -6)
-    shoppingButton:SetScript("OnClick", function()
-        RB:NormalizeTradeSkillQuantityBox(false)
-        RB:ImportSelectedRecipeToShoppingList()
-    end)
-    shoppingButton:SetScript("OnEnter", function(selfButton)
-        GameTooltip:SetOwner(selfButton, "ANCHOR_RIGHT")
-        GameTooltip:SetText("AH Shopping List", 1, 0.82, 0)
-        GameTooltip:AddLine(selfButton.tooltipText or "Add selected recipe reagents that still need to be bought.", 1, 1, 1, true)
-        GameTooltip:Show()
-    end)
-    shoppingButton:SetScript("OnLeave", HideTooltip)
-    self.tradeSkillShoppingButton = shoppingButton
-
-    local check = CreateFrame("CheckButton", "ReagentBankUIAutoDepositLeftoversCheck", panel, "UICheckButtonTemplate")
-    check:SetWidth(22)
-    check:SetHeight(22)
-    check:SetPoint("TOPLEFT", inset - 2, -151)
-    check:SetScript("OnClick", function(selfCheck)
-        ReagentBankUIDB = ReagentBankUIDB or {}
-        ReagentBankUIDB.autoDepositLeftovers = selfCheck:GetChecked() and true or false
-        if not ReagentBankUIDB.autoDepositLeftovers then
-            RB.pendingAutoDepositLeftovers = nil
-            RB.pendingAutoDepositAt = nil
-        end
-        RB:UpdateTradeSkillControls()
-    end)
-    check:SetScript("OnEnter", function(selfCheck)
-        GameTooltip:SetOwner(selfCheck, "ANCHOR_RIGHT")
-        GameTooltip:SetText("Auto-deposit leftovers", 1, 0.82, 0)
-        GameTooltip:AddLine("When you close the profession window, deposit prepared reagent leftovers back into the reagent bank. It preserves the bag counts you had before Withdraw Needed.", 1, 1, 1, true)
-        GameTooltip:Show()
-    end)
-    check:SetScript("OnLeave", HideTooltip)
-    self.tradeSkillAutoDepositCheck = check
-
-    panel.checkText = _G[check:GetName() .. "Text"]
-    if panel.checkText then
-        if _G.GameFontHighlightSmall then
-            panel.checkText:SetFontObject(_G.GameFontHighlightSmall)
-        end
-        panel.checkText:SetText("Auto-deposit leftovers")
-    end
-
-    panel.statsLine = panel:CreateTexture(nil, "ARTWORK")
-    panel.statsLine:SetTexture("Interface\\ChatFrame\\ChatFrameBackground")
-    panel.statsLine:SetPoint("TOPLEFT", inset, -182)
-    panel.statsLine:SetPoint("TOPRIGHT", -inset, -182)
-    panel.statsLine:SetHeight(1)
-    SetTextureColor(panel.statsLine, DIVIDER_COLOR)
-
-    panel.craftValue = panel:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
-    panel.craftValue:SetPoint("TOPLEFT", inset, -192)
-    panel.craftValue:SetJustifyH("LEFT")
-    panel.craftValue:SetText("-")
-
-    panel.craftLabel = panel:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    panel.craftLabel:SetPoint("BOTTOMLEFT", panel.craftValue, "BOTTOMRIGHT", 6, 2)
-    panel.craftLabel:SetJustifyH("LEFT")
-    panel.craftLabel:SetText("")
-
-    panel.craftNote = panel:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-    panel.craftNote:SetWidth(contentWidth)
-    panel.craftNote:SetPoint("TOPLEFT", inset, -PROFESSION_PANEL_NOTE_TOP)
-    panel.craftNote:SetJustifyH("LEFT")
-    panel.craftNote:SetJustifyV("TOP")
-    panel.craftNote:SetText("")
-
-    local statsText = panel:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-    statsText:SetWidth(contentWidth)
-    statsText:SetPoint("TOPLEFT", panel.craftNote, "BOTTOMLEFT", 0, -10)
-    statsText:SetJustifyH("LEFT")
-    statsText:SetJustifyV("TOP")
-    statsText:SetSpacing(3)
-    statsText:SetText("")
-    self.tradeSkillStatsText = statsText
-
-    if hooksecurefunc and TradeSkillFrame_SetSelection and not self.tradeSkillSelectionHooked then
-        hooksecurefunc("TradeSkillFrame_SetSelection", function()
-            RB:UpdateTradeSkillControls()
-        end)
-        self.tradeSkillSelectionHooked = true
-    end
-
-    local nativeInput = _G.TradeSkillInputBox
-    if nativeInput and nativeInput.HookScript and not self.tradeSkillNativeInputHooked then
-        nativeInput:HookScript("OnTextChanged", function(inputBox)
-            if RB.suppressNativeTradeSkillQuantityChanged then
-                return
-            end
-
-            local value = nil
-            if inputBox.GetNumber then
-                value = tonumber(inputBox:GetNumber())
-            end
-            if (not value or value <= 0) and inputBox.GetText then
-                value = tonumber(inputBox:GetText())
-            end
-
-            if value and value > 0 then
-                RB:SetTradeSkillPrepareCount(value, false)
-            end
-        end)
-        self.tradeSkillNativeInputHooked = true
-    end
-
-    self:UpdateTradeSkillControls()
-end
-
-function RB:DockTradeSkillPanel()
-    local panel = self.tradeSkillPanel
-    local parent = self:GetTradeSkillControlsHost()
-    if not panel or not parent then
-        return
-    end
-
-    panel:ClearAllPoints()
-    panel:SetPoint("TOPLEFT", parent, "TOPRIGHT", PROFESSION_PANEL_X, PROFESSION_PANEL_Y)
-    panel:Show()
 end
 
 function RB:ApplyScale()
@@ -7377,7 +6703,7 @@ function RB:HandleProtocol(message)
                     end
 
                     self:CompletePendingShoppingListImport(pending.key)
-                    self:UpdateTradeSkillControls()
+                    self:UpdateReagentBankOverlays()
                 end
 
                 local pendingTooltip = self.pendingTooltipBankChecks and self.pendingTooltipBankChecks[requestId] or nil
@@ -7692,7 +7018,7 @@ SlashCmdList["REAGENTBANKUI"] = function(msg)
         end
 
         RB:PrintTradeSkillShoppingList()
-        RB:UpdateTradeSkillControls()
+        RB:UpdateReagentBankOverlays()
         return
     end
 
@@ -7801,7 +7127,7 @@ SlashCmdList["REAGENTBANKUI"] = function(msg)
             RB.pendingAutoDepositAt = nil
         end
 
-        RB:UpdateTradeSkillControls()
+        RB:UpdateReagentBankOverlays()
         PrintAddon("auto-deposit leftovers on profession close " .. (ReagentBankUIDB.autoDepositLeftovers and "enabled." or "disabled."))
         return
     end
@@ -7864,19 +7190,14 @@ RB:SetScript("OnEvent", function(self, event, ...)
             ReagentBankUIDB.sortMode = NormalizeItemSortMode(ReagentBankUIDB.sortMode)
             ReagentBankUIDB.categorySortMode = NormalizeCategorySortMode(ReagentBankUIDB.categorySortMode)
             self:NormalizeShoppingList()
-            if ReagentBankUIDB.tradeSkillPrepareCount == nil then
-                ReagentBankUIDB.tradeSkillPrepareCount = 1
-            else
-                ReagentBankUIDB.tradeSkillPrepareCount = self:ClampTradeSkillPrepareCount(ReagentBankUIDB.tradeSkillPrepareCount)
-            end
             ReagentBankUIDB.lowStockCrafts = self:ClampTradeSkillPrepareCount(ReagentBankUIDB.lowStockCrafts or LOW_STOCK_DEFAULT_CRAFTS)
             self:ApplySavedPosition()
             self:ApplyScale()
             self:CreatePaperDollButton()
-            self:CreateTradeSkillControls()
+            self:HookTradeSkillSelection()
             self:FixAuctionatorShoppingListOptions()
         elseif addonName == "Blizzard_TradeSkillUI" then
-            self:CreateTradeSkillControls()
+            self:HookTradeSkillSelection()
         elseif addonName == "Auctionator" then
             self:FixAuctionatorShoppingListOptions()
         end
@@ -7885,19 +7206,14 @@ RB:SetScript("OnEvent", function(self, event, ...)
         self:RestartAutoDepositTicker()
         self:CreatePaperDollButton()
         self:CreateSettingsPanel()
-        self:CreateTradeSkillControls()
         self:FixAuctionatorShoppingListOptions()
     elseif event == "TRADE_SKILL_SHOW" then
-        self:CreateTradeSkillControls()
-        self:DockTradeSkillPanel()
+        self:HookTradeSkillSelection()
         self:RequestBankSnapshot()
-        self:UpdateTradeSkillControls()
+        self:UpdateReagentBankOverlays()
     elseif event == "TRADE_SKILL_UPDATE" then
         -- Fires in bursts (opening, expanding headers, every filter keystroke, item
-        -- info arriving), so the sidebar redraws once per burst.
-        if not self.tradeSkillPanel then
-            self:CreateTradeSkillControls()
-        end
+        -- info arriving), so the badges redraw once per burst.
         self:RequestBankSnapshot()
         self:ScheduleTradeSkillBagRefresh()
     elseif event == "BAG_UPDATE" then

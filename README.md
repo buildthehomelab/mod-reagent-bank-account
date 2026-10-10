@@ -37,19 +37,21 @@ Deposits skip any item a quest in your log asks for, so auto-deposit cannot take
 
 ## Profession Integration
 
-Open a profession window and ReagentBankUI docks a reagent bank sidebar to its right edge.
+The profession controls live in the profession window itself. With [RetailProfessions](https://github.com/buildthehomelab/wow-mod-retail-professions):
 
-- A craftable count for the selected recipe, counting bags and reagent bank together
-- **Withdraw Needed** pulls missing reagents for the selected recipe
-- A **Crafts** stepper for multi-craft amounts, with **x1**, **x100** and **Max** presets. **Max** fills in however many crafts your bags and reagent bank cover between them
+- **Create** and **Create All** count the reagent bank and take what your bags are missing out of it before crafting (**Use reagent bank**)
+- **Deposit leftovers** puts reagents that came out of the bank and weren't used back when you close the window
+- **Add to Shopping List** puts what bags and bank are short of, for the amount you chose, on the AH shopping list
+- Each reagent shows what is waiting in the bank
+
+The sidebar ReagentBankUI used to dock beside the profession window is gone: it repeated all of the above. On the Blizzard profession window you still get:
+
 - Per-reagent `+N` badges on the recipe's reagent rows showing what is waiting in the bank, green when bags plus bank cover the craft and orange when they do not
-- A plan summary listing what to withdraw, what to buy, and which reagents are running low
-- Optional leftover auto-deposit when closing the profession window
+- `/rbank craft [count]` withdraws the missing reagents for the selected recipe, `/rbank plan [count]` prints what to withdraw, what to buy and what is running low, and `/rbank autodeposit` turns the leftover deposit on or off
 - Periodic auto-deposit pauses while the profession window is open and resumes when you close it
-- **Add to AH List** adds missing recipe reagents to the shopping list
 - Note that the UI icon is attached to the outside lower portion of the character frame by default.
 
-<img width="1305" height="906" alt="Reagent2" src="https://github.com/user-attachments/assets/ee0a2073-7406-4137-885d-034b2ca0104f" />
+Addon authors: a window registered with `RegisterRecipeProvider` supplies the selected recipe and craft count for the withdraw, the shopping list and the leftovers deposit, and brings its own buttons for them.
 
 ---
 
@@ -60,7 +62,7 @@ ReagentBankUI includes an AH shopping list for missing crafting materials.
 You can add items to the AH list from:
 
 - The main reagent item detail screen
-- The profession window with **Add to AH List**
+- The profession window with **Add to Shopping List** (RetailProfessions)
 - The AH list **From Recipe** button
 - **Ctrl+Shift-click** any item: in your bags, in Auction House results, or a linked item in chat. A popup asks how many to buy
 - Dropping an item from your bags onto the AH list panel beside the Auction House
@@ -77,6 +79,7 @@ Shopping list features:
 - Clear the list
 - Shows the amount left to buy, how many you have bought, and current bag count
 - Compact AH helper panel opens beside the Auction House frame. Drag it anywhere; it docks beside the Auction House again the next time you open it
+- With [RetailAH](https://github.com/buildthehomelab/wow-mod-retail-ah), the list lives on its Buy tab instead of the helper panel: what's left to buy, prices, and purchases counted off as you make them (addon authors: `RegisterShoppingListView`)
 
 Buying an item on the list takes it off the list. Each buyout the server accepts subtracts that stack from the amount left and adds it to the bought count. When the amount left reaches zero, the item is removed and the total bought is printed to chat. This works for buyouts from the default Auction House UI and from Auctionator. Plain bids are not counted, since you only get the item if you win the auction later.
 
