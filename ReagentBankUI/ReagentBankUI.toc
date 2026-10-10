@@ -2,7 +2,7 @@
 ## Title: Reagent Bank UI
 ## Notes: Standalone UI for the AzerothCore Reagent Bank Account module. No banker NPC required.
 ## Author: Dinkledork
-## Version: 2.7.0-bank-snapshot
+## Version: 2.8.0
 ## OptionalDeps: Auctionator
 ## SavedVariables: ReagentBankUIDB
 
