@@ -492,6 +492,78 @@ namespace ReagentBank
         }
     }
 
+    static uint32 GetCategoryForSkinFlags(uint32 typeFlags)
+    {
+        if (typeFlags & CREATURE_TYPE_FLAG_SKIN_WITH_HERBALISM)
+            return ITEM_SUBCLASS_HERB;
+        if (typeFlags & CREATURE_TYPE_FLAG_SKIN_WITH_MINING)
+            return ITEM_SUBCLASS_METAL_STONE;
+        if (typeFlags & CREATURE_TYPE_FLAG_SKIN_WITH_ENGINEERING)
+            return ITEM_SUBCLASS_PARTS;
+        return ITEM_SUBCLASS_LEATHER;
+    }
+
+    // Everything a corpse can be skinned (or herb-, ore- or engineer-gathered) for is
+    // bankable, whatever its item class: hides like Shadowcat Hide and Thick Wolfhide are
+    // Trade Goods subclass 0 in the data, and others are Quest or Junk class. The category
+    // follows the gathering skill. Items a profession recipe already filed keep that
+    // category, and food stays out for the same reason as above.
+    static size_t LoadSkinningItems()
+    {
+        constexpr uint32 skinFlags = CREATURE_TYPE_FLAG_SKIN_WITH_HERBALISM | CREATURE_TYPE_FLAG_SKIN_WITH_MINING |
+            CREATURE_TYPE_FLAG_SKIN_WITH_ENGINEERING;
+
+        QueryResult result = WorldDatabase.Query(
+            "SELECT l.`item`, l.`skin_flags`, COUNT(*) FROM ("
+            "SELECT s.`Item` AS `item`, COALESCE(ct.`type_flags`, 0) & {} AS `skin_flags` "
+            "FROM `skinning_loot_template` s "
+            "LEFT JOIN `creature_template` ct ON ct.`skinloot` = s.`Entry` "
+            "WHERE s.`Reference` = 0 "
+            "UNION ALL "
+            "SELECT r.`Item`, COALESCE(ct.`type_flags`, 0) & {} "
+            "FROM `skinning_loot_template` s "
+            "JOIN `reference_loot_template` r ON r.`Entry` = s.`Reference` AND r.`Reference` = 0 "
+            "LEFT JOIN `creature_template` ct ON ct.`skinloot` = s.`Entry` "
+            "WHERE s.`Reference` <> 0"
+            ") l GROUP BY l.`item`, l.`skin_flags`",
+            skinFlags, skinFlags);
+
+        if (!result)
+            return 0;
+
+        std::unordered_map<uint32, std::map<uint32, uint64>> categoriesByItem;
+        do
+        {
+            uint32 const itemEntry = (*result)[0].Get<uint32>();
+            uint32 const category = GetCategoryForSkinFlags((*result)[1].Get<uint32>());
+            categoriesByItem[itemEntry][category] += (*result)[2].Get<uint64>();
+        } while (result->NextRow());
+
+        size_t count = 0;
+        for (auto const& [itemEntry, categories] : categoriesByItem)
+        {
+            ItemTemplate const* proto = sObjectMgr->GetItemTemplate(itemEntry);
+            if (!proto || proto->GetMaxStackSize() <= 1 || proto->Class == ITEM_CLASS_CONSUMABLE)
+                continue;
+
+            uint32 bestCategory = ITEM_SUBCLASS_LEATHER;
+            uint64 bestCount = 0;
+            for (auto const& [category, rows] : categories)
+            {
+                if (rows > bestCount)
+                {
+                    bestCategory = category;
+                    bestCount = rows;
+                }
+            }
+
+            if (g_reagentBankExtraItems.try_emplace(itemEntry, bestCategory).second)
+                ++count;
+        }
+
+        return count;
+    }
+
     // Many classic reagents are Quest or Misc class in the item data (Black Diamond,
     // Shoveltusk Meat, Tough Ram Meat, ...), so the Trade Goods/Gem check misses them.
     // Any of those that a profession recipe uses counts as a reagent, filed under the
@@ -546,6 +618,7 @@ namespace ReagentBank
         }
 
         size_t const professionCount = g_reagentBankExtraItems.size();
+        size_t const skinningCount = LoadSkinningItems();
         size_t inclusionCount = 0;
 
         if (QueryResult result = WorldDatabase.Query(
@@ -571,8 +644,8 @@ namespace ReagentBank
             } while (result->NextRow());
         }
 
-        LOG_INFO("module", "ReagentBankAccount: {} profession reagent(s) outside Trade Goods and {} inclusion item(s) are bankable.",
-            professionCount, inclusionCount);
+        LOG_INFO("module", "ReagentBankAccount: {} profession reagent(s) outside Trade Goods, {} skinning item(s) and {} inclusion item(s) are bankable.",
+            professionCount, skinningCount, inclusionCount);
     }
 
     // Banking an item an active quest asks for would undo the quest's progress, or leave
@@ -947,11 +1020,20 @@ namespace ReagentBank
         }
 
         auto const itr = g_reagentBankExtraItems.find(proto->ItemId);
-        if (itr == g_reagentBankExtraItems.end())
-            return false;
+        if (itr != g_reagentBankExtraItems.end())
+        {
+            itemSubclass = itr->second;
+            return true;
+        }
 
-        itemSubclass = itr->second;
-        return true;
+        // Plain "Trade Goods" (subclass 0) has no bank tab of its own (Ironfeather).
+        if (proto->Class == ITEM_CLASS_TRADE_GOODS && proto->SubClass == ITEM_SUBCLASS_TRADE_GOODS)
+        {
+            itemSubclass = ITEM_SUBCLASS_TRADE_GOODS_OTHER;
+            return true;
+        }
+
+        return false;
     }
 
     static void LoadStoredItems(Player const* player, std::map<uint32, StoredItem>& items)

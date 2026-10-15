@@ -28,6 +28,8 @@ This module adds a server-backed reagent bank for trade goods, gems, and craftin
 
 - Trade Goods and Gems that stack
 - Quest- and Misc-class items that a profession recipe uses, such as Black Diamond, Shoveltusk Meat and Tough Ram Meat. Each one is filed under the category of the profession that uses it most (cooking items go under Meat). You don't need to know the recipe. Potions, food and other consumables stay in your bags even when a recipe uses them
+- Anything that stacks and comes from skinning loot, whatever its item class (Shadowcat Hide, Thick Wolfhide, Frostsaber Leather, yeti hides). Herb-, ore- and engineer-gathered creature loot goes under Herb, Metal & Stone and Parts; everything else goes under Leather. Food from skinning loot stays in your bags
+- Plain "Trade Goods" items with no subtype (Ironfeather), filed under Other Trade Goods
 - Anything listed in the world table `mod_reagent_bank_account_deposit_inclusions_zz_custom` (`item_entry`, `item_subclass` = bank category). It ships with Dark Iron Residue
 - Items listed in `mod_reagent_bank_account_deposit_exclusions_zz_custom` are never deposited
 
