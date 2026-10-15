@@ -8,4 +8,5 @@ CREATE TABLE IF NOT EXISTS `mod_reagent_bank_account_deposit_inclusions_zz_custo
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 INSERT IGNORE INTO `mod_reagent_bank_account_deposit_inclusions_zz_custom` (`item_entry`, `item_subclass`, `comment`) VALUES
-(18945, 11, 'Dark Iron Residue (Quest class, Thorium Brotherhood turn-in)');
+(18945, 11, 'Dark Iron Residue (Quest class, Thorium Brotherhood turn-in)'),
+(15420, 11, 'Ironfeather (Trade Goods with no subtype, owlbeast drop)');

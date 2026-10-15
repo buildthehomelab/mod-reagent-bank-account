@@ -492,6 +492,95 @@ namespace ReagentBank
         }
     }
 
+    static uint32 GetCategoryForSkinFlags(uint32 typeFlags)
+    {
+        if (typeFlags & CREATURE_TYPE_FLAG_SKIN_WITH_HERBALISM)
+            return ITEM_SUBCLASS_HERB;
+        if (typeFlags & CREATURE_TYPE_FLAG_SKIN_WITH_MINING)
+            return ITEM_SUBCLASS_METAL_STONE;
+        if (typeFlags & CREATURE_TYPE_FLAG_SKIN_WITH_ENGINEERING)
+            return ITEM_SUBCLASS_PARTS;
+        return ITEM_SUBCLASS_LEATHER;
+    }
+
+    // A one-time quest objective (Thick Yeti Hide) belongs in the bags until that quest is
+    // picked up. Repeatable turn-ins (Unidentified Plant Parts) are farmed in bulk, so they stay.
+    static std::unordered_set<uint32> GetOneTimeQuestItems()
+    {
+        std::unordered_set<uint32> oneTime;
+        std::unordered_set<uint32> repeatable;
+        for (auto const& [questId, quest] : sObjectMgr->GetQuestTemplates())
+        {
+            bool const isRepeatable = quest->IsRepeatable() || quest->IsDailyOrWeekly();
+            for (uint32 itemEntry : quest->RequiredItemId)
+                if (itemEntry)
+                    (isRepeatable ? repeatable : oneTime).insert(itemEntry);
+        }
+
+        for (uint32 itemEntry : repeatable)
+            oneTime.erase(itemEntry);
+
+        return oneTime;
+    }
+
+    // Everything a corpse can be skinned (or herb-, ore- or engineer-gathered) for is
+    // bankable, whatever its item class: hides like Shadowcat Hide and Thick Wolfhide are
+    // Trade Goods subclass 0 in the data, and others are Quest or Junk class. The category
+    // follows the gathering skill. Left out: food (as above), grey vendor trash, bound items
+    // (the bank is account-wide) and one-time quest objectives. Loot data doesn't change on
+    // a config reload, so the scan runs once and later calls reuse it.
+    static size_t LoadSkinningItems()
+    {
+        static std::unordered_map<uint32, uint32> skinningItems;
+        static bool scanned = false;
+
+        if (!scanned)
+        {
+            scanned = true;
+
+            constexpr uint32 skinFlags = CREATURE_TYPE_FLAG_SKIN_WITH_HERBALISM | CREATURE_TYPE_FLAG_SKIN_WITH_MINING |
+                CREATURE_TYPE_FLAG_SKIN_WITH_ENGINEERING;
+
+            // Follows nested references; the depth cap stops a reference loop.
+            QueryResult result = WorldDatabase.Query(
+                "WITH RECURSIVE l (`item`, `reference`, `skin_flags`, `depth`) AS ("
+                "SELECT s.`Item`, s.`Reference`, COALESCE(ct.`type_flags`, 0) & {}, 0 "
+                "FROM `skinning_loot_template` s "
+                "LEFT JOIN `creature_template` ct ON ct.`skinloot` = s.`Entry` "
+                "UNION ALL "
+                "SELECT r.`Item`, r.`Reference`, l.`skin_flags`, l.`depth` + 1 "
+                "FROM l JOIN `reference_loot_template` r ON r.`Entry` = l.`reference` "
+                "WHERE l.`reference` <> 0 AND l.`depth` < 5"
+                ") SELECT `item`, BIT_OR(`skin_flags`) FROM l WHERE `reference` = 0 GROUP BY `item`",
+                skinFlags);
+
+            std::unordered_set<uint32> const oneTimeQuestItems = GetOneTimeQuestItems();
+
+            if (result)
+            {
+                do
+                {
+                    uint32 const itemEntry = (*result)[0].Get<uint32>();
+                    ItemTemplate const* proto = sObjectMgr->GetItemTemplate(itemEntry);
+                    if (!proto || proto->GetMaxStackSize() <= 1 || proto->Class == ITEM_CLASS_CONSUMABLE ||
+                        proto->Quality == ITEM_QUALITY_POOR || proto->Bonding == BIND_WHEN_PICKED_UP ||
+                        proto->Bonding == BIND_QUEST_ITEM || oneTimeQuestItems.contains(itemEntry))
+                        continue;
+
+                    skinningItems[itemEntry] = GetCategoryForSkinFlags(uint32((*result)[1].Get<uint64>()));
+                } while (result->NextRow());
+            }
+        }
+
+        // Items a profession recipe already filed keep that category.
+        size_t count = 0;
+        for (auto const& [itemEntry, category] : skinningItems)
+            if (g_reagentBankExtraItems.try_emplace(itemEntry, category).second)
+                ++count;
+
+        return count;
+    }
+
     // Many classic reagents are Quest or Misc class in the item data (Black Diamond,
     // Shoveltusk Meat, Tough Ram Meat, ...), so the Trade Goods/Gem check misses them.
     // Any of those that a profession recipe uses counts as a reagent, filed under the
@@ -546,6 +635,7 @@ namespace ReagentBank
         }
 
         size_t const professionCount = g_reagentBankExtraItems.size();
+        size_t const skinningCount = LoadSkinningItems();
         size_t inclusionCount = 0;
 
         if (QueryResult result = WorldDatabase.Query(
@@ -571,8 +661,8 @@ namespace ReagentBank
             } while (result->NextRow());
         }
 
-        LOG_INFO("module", "ReagentBankAccount: {} profession reagent(s) outside Trade Goods and {} inclusion item(s) are bankable.",
-            professionCount, inclusionCount);
+        LOG_INFO("module", "ReagentBankAccount: {} profession reagent(s) outside Trade Goods, {} skinning item(s) and {} inclusion item(s) are bankable.",
+            professionCount, skinningCount, inclusionCount);
     }
 
     // Banking an item an active quest asks for would undo the quest's progress, or leave
