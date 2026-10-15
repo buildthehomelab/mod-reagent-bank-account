@@ -503,63 +503,80 @@ namespace ReagentBank
         return ITEM_SUBCLASS_LEATHER;
     }
 
+    // A one-time quest objective (Thick Yeti Hide) belongs in the bags until that quest is
+    // picked up. Repeatable turn-ins (Unidentified Plant Parts) are farmed in bulk, so they stay.
+    static std::unordered_set<uint32> GetOneTimeQuestItems()
+    {
+        std::unordered_set<uint32> oneTime;
+        std::unordered_set<uint32> repeatable;
+        for (auto const& [questId, quest] : sObjectMgr->GetQuestTemplates())
+        {
+            bool const isRepeatable = quest->IsRepeatable() || quest->IsDailyOrWeekly();
+            for (uint32 itemEntry : quest->RequiredItemId)
+                if (itemEntry)
+                    (isRepeatable ? repeatable : oneTime).insert(itemEntry);
+        }
+
+        for (uint32 itemEntry : repeatable)
+            oneTime.erase(itemEntry);
+
+        return oneTime;
+    }
+
     // Everything a corpse can be skinned (or herb-, ore- or engineer-gathered) for is
     // bankable, whatever its item class: hides like Shadowcat Hide and Thick Wolfhide are
     // Trade Goods subclass 0 in the data, and others are Quest or Junk class. The category
-    // follows the gathering skill. Items a profession recipe already filed keep that
-    // category, and food stays out for the same reason as above.
+    // follows the gathering skill. Left out: food (as above), grey vendor trash, bound items
+    // (the bank is account-wide) and one-time quest objectives. Loot data doesn't change on
+    // a config reload, so the scan runs once and later calls reuse it.
     static size_t LoadSkinningItems()
     {
-        constexpr uint32 skinFlags = CREATURE_TYPE_FLAG_SKIN_WITH_HERBALISM | CREATURE_TYPE_FLAG_SKIN_WITH_MINING |
-            CREATURE_TYPE_FLAG_SKIN_WITH_ENGINEERING;
+        static std::unordered_map<uint32, uint32> skinningItems;
+        static bool scanned = false;
 
-        QueryResult result = WorldDatabase.Query(
-            "SELECT l.`item`, l.`skin_flags`, COUNT(*) FROM ("
-            "SELECT s.`Item` AS `item`, COALESCE(ct.`type_flags`, 0) & {} AS `skin_flags` "
-            "FROM `skinning_loot_template` s "
-            "LEFT JOIN `creature_template` ct ON ct.`skinloot` = s.`Entry` "
-            "WHERE s.`Reference` = 0 "
-            "UNION ALL "
-            "SELECT r.`Item`, COALESCE(ct.`type_flags`, 0) & {} "
-            "FROM `skinning_loot_template` s "
-            "JOIN `reference_loot_template` r ON r.`Entry` = s.`Reference` AND r.`Reference` = 0 "
-            "LEFT JOIN `creature_template` ct ON ct.`skinloot` = s.`Entry` "
-            "WHERE s.`Reference` <> 0"
-            ") l GROUP BY l.`item`, l.`skin_flags`",
-            skinFlags, skinFlags);
-
-        if (!result)
-            return 0;
-
-        std::unordered_map<uint32, std::map<uint32, uint64>> categoriesByItem;
-        do
+        if (!scanned)
         {
-            uint32 const itemEntry = (*result)[0].Get<uint32>();
-            uint32 const category = GetCategoryForSkinFlags((*result)[1].Get<uint32>());
-            categoriesByItem[itemEntry][category] += (*result)[2].Get<uint64>();
-        } while (result->NextRow());
+            scanned = true;
 
-        size_t count = 0;
-        for (auto const& [itemEntry, categories] : categoriesByItem)
-        {
-            ItemTemplate const* proto = sObjectMgr->GetItemTemplate(itemEntry);
-            if (!proto || proto->GetMaxStackSize() <= 1 || proto->Class == ITEM_CLASS_CONSUMABLE)
-                continue;
+            constexpr uint32 skinFlags = CREATURE_TYPE_FLAG_SKIN_WITH_HERBALISM | CREATURE_TYPE_FLAG_SKIN_WITH_MINING |
+                CREATURE_TYPE_FLAG_SKIN_WITH_ENGINEERING;
 
-            uint32 bestCategory = ITEM_SUBCLASS_LEATHER;
-            uint64 bestCount = 0;
-            for (auto const& [category, rows] : categories)
+            // Follows nested references; the depth cap stops a reference loop.
+            QueryResult result = WorldDatabase.Query(
+                "WITH RECURSIVE l (`item`, `reference`, `skin_flags`, `depth`) AS ("
+                "SELECT s.`Item`, s.`Reference`, COALESCE(ct.`type_flags`, 0) & {}, 0 "
+                "FROM `skinning_loot_template` s "
+                "LEFT JOIN `creature_template` ct ON ct.`skinloot` = s.`Entry` "
+                "UNION ALL "
+                "SELECT r.`Item`, r.`Reference`, l.`skin_flags`, l.`depth` + 1 "
+                "FROM l JOIN `reference_loot_template` r ON r.`Entry` = l.`reference` "
+                "WHERE l.`reference` <> 0 AND l.`depth` < 5"
+                ") SELECT `item`, BIT_OR(`skin_flags`) FROM l WHERE `reference` = 0 GROUP BY `item`",
+                skinFlags);
+
+            std::unordered_set<uint32> const oneTimeQuestItems = GetOneTimeQuestItems();
+
+            if (result)
             {
-                if (rows > bestCount)
+                do
                 {
-                    bestCategory = category;
-                    bestCount = rows;
-                }
-            }
+                    uint32 const itemEntry = (*result)[0].Get<uint32>();
+                    ItemTemplate const* proto = sObjectMgr->GetItemTemplate(itemEntry);
+                    if (!proto || proto->GetMaxStackSize() <= 1 || proto->Class == ITEM_CLASS_CONSUMABLE ||
+                        proto->Quality == ITEM_QUALITY_POOR || proto->Bonding == BIND_WHEN_PICKED_UP ||
+                        proto->Bonding == BIND_QUEST_ITEM || oneTimeQuestItems.contains(itemEntry))
+                        continue;
 
-            if (g_reagentBankExtraItems.try_emplace(itemEntry, bestCategory).second)
-                ++count;
+                    skinningItems[itemEntry] = GetCategoryForSkinFlags(uint32((*result)[1].Get<uint64>()));
+                } while (result->NextRow());
+            }
         }
+
+        // Items a profession recipe already filed keep that category.
+        size_t count = 0;
+        for (auto const& [itemEntry, category] : skinningItems)
+            if (g_reagentBankExtraItems.try_emplace(itemEntry, category).second)
+                ++count;
 
         return count;
     }
@@ -1020,20 +1037,11 @@ namespace ReagentBank
         }
 
         auto const itr = g_reagentBankExtraItems.find(proto->ItemId);
-        if (itr != g_reagentBankExtraItems.end())
-        {
-            itemSubclass = itr->second;
-            return true;
-        }
+        if (itr == g_reagentBankExtraItems.end())
+            return false;
 
-        // Plain "Trade Goods" (subclass 0) has no bank tab of its own (Ironfeather).
-        if (proto->Class == ITEM_CLASS_TRADE_GOODS && proto->SubClass == ITEM_SUBCLASS_TRADE_GOODS)
-        {
-            itemSubclass = ITEM_SUBCLASS_TRADE_GOODS_OTHER;
-            return true;
-        }
-
-        return false;
+        itemSubclass = itr->second;
+        return true;
     }
 
     static void LoadStoredItems(Player const* player, std::map<uint32, StoredItem>& items)
