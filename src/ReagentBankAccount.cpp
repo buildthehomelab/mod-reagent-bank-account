@@ -981,37 +981,64 @@ namespace ReagentBank
         } while (result->NextRow());
     }
 
-    static void SaveStoredItems(Player const* player, std::map<uint32, StoredItem> const& changedItems)
+    // Writes the change from previousAmount to item.Amount as a relative update, so a
+    // change another module queued in between (RetailAH posting from the bank) still adds up.
+    static void AppendStoredItemChange(CharacterDatabaseTransaction trans, Player const* player, StoredItem const& item, uint32 previousAmount)
     {
-        if (changedItems.empty())
+        if (item.Amount == previousAmount)
             return;
 
         uint32 accountKey = 0;
         uint32 guidKey = 0;
         GetStorageKeys(player, accountKey, guidKey);
 
+        if (item.Amount > previousAmount)
+        {
+            uint32 const added = item.Amount - previousAmount;
+            trans->Append(
+                "INSERT INTO mod_reagent_bank_account "
+                "(account_id, guid, item_entry, item_subclass, amount) "
+                "VALUES ({}, {}, {}, {}, {}) "
+                "ON DUPLICATE KEY UPDATE amount = LEAST(4294967295, amount + {}), item_subclass = {}",
+                accountKey, guidKey, item.ItemEntry, item.ItemSubclass, added, added, item.ItemSubclass);
+            return;
+        }
+
+        uint32 const removed = previousAmount - item.Amount;
+        trans->Append(
+            "UPDATE mod_reagent_bank_account SET amount = IF(amount > {}, amount - {}, 0) "
+            "WHERE account_id = {} AND guid = {} AND item_entry = {}",
+            removed, removed, accountKey, guidKey, item.ItemEntry);
+        trans->Append(
+            "DELETE FROM mod_reagent_bank_account "
+            "WHERE account_id = {} AND guid = {} AND item_entry = {} AND amount = 0",
+            accountKey, guidKey, item.ItemEntry);
+    }
+
+    // Every .rbank command runs on the world thread (CMSG_MESSAGECHAT is THREADUNSAFE) and
+    // reads the bank with a synchronous query, so the write has to be in the table before
+    // the command returns. With an async commit, two commands in the same tick both read
+    // the old amount and paid the same stock out twice.
+    static void CommitStoredItemChanges(CharacterDatabaseTransaction trans)
+    {
+        if (trans->GetSize())
+            CharacterDatabase.DirectCommitTransaction(trans);
+    }
+
+    static void SaveStoredItems(Player const* player, std::map<uint32, StoredItem> const& previousItems, std::map<uint32, StoredItem> const& changedItems)
+    {
+        if (changedItems.empty())
+            return;
+
         auto trans = CharacterDatabase.BeginTransaction();
 
         for (std::pair<uint32 const, StoredItem> const& pair : changedItems)
         {
-            StoredItem const& item = pair.second;
-
-            trans->Append(
-                "DELETE FROM mod_reagent_bank_account "
-                "WHERE account_id = {} AND guid = {} AND item_entry = {}",
-                accountKey, guidKey, item.ItemEntry);
-
-            if (item.Amount)
-            {
-                trans->Append(
-                    "INSERT INTO mod_reagent_bank_account "
-                    "(account_id, guid, item_entry, item_subclass, amount) "
-                    "VALUES ({}, {}, {}, {}, {})",
-                    accountKey, guidKey, item.ItemEntry, item.ItemSubclass, item.Amount);
-            }
+            auto const previous = previousItems.find(pair.first);
+            AppendStoredItemChange(trans, player, pair.second, previous != previousItems.end() ? previous->second.Amount : 0);
         }
 
-        CharacterDatabase.CommitTransaction(trans);
+        CommitStoredItemChanges(trans);
     }
 
     static void QueryCategoryTotals(Player const* player, uint32 category, uint32& typeCount, uint64& totalAmount)
@@ -1206,6 +1233,7 @@ namespace ReagentBank
 
         std::map<uint32, StoredItem> storedItems;
         LoadStoredItems(player, storedItems);
+        std::map<uint32, StoredItem> const previousItems = storedItems;
 
         uint32 totalDeposited = 0;
 
@@ -1253,7 +1281,7 @@ namespace ReagentBank
                 changedItems[pair.first] = storedItr->second;
         }
 
-        SaveStoredItems(player, changedItems);
+        SaveStoredItems(player, previousItems, changedItems);
         return totalDeposited;
     }
 
@@ -1356,6 +1384,7 @@ namespace ReagentBank
 
         std::map<uint32, StoredItem> storedItems;
         LoadStoredItems(player, storedItems);
+        std::map<uint32, StoredItem> const previousItems = storedItems;
 
         uint32 totalDeposited = 0;
 
@@ -1416,7 +1445,7 @@ namespace ReagentBank
                 changedItems[pair.first] = storedItr->second;
         }
 
-        SaveStoredItems(player, changedItems);
+        SaveStoredItems(player, previousItems, changedItems);
         return totalDeposited;
     }
 
@@ -1516,7 +1545,7 @@ namespace ReagentBank
         SendProtocol(handler, Acore::StringFormat("RBANK:CHECK:END:{}:{}", requestId, uint32(storedItems.size())));
     }
 
-    static uint32 WithdrawExact(Player* player, StoredItem& stored, uint32 requestedAmount, bool& stoppedForBagSpace, ItemAmountMap& withdrawn)
+    static uint32 WithdrawExact(Player* player, StoredItem& stored, uint32 requestedAmount, bool& stoppedForBagSpace, ItemAmountMap& withdrawn, CharacterDatabaseTransaction trans)
     {
         stoppedForBagSpace = false;
 
@@ -1524,6 +1553,7 @@ namespace ReagentBank
         if (!proto)
             return 0;
 
+        uint32 const previousAmount = stored.Amount;
         uint32 remainingRequest = std::min<uint32>(requestedAmount, stored.Amount);
         uint32 withdrawnAmount = 0;
         uint32 stackSize = std::max<uint32>(1, proto->GetMaxStackSize());
@@ -1563,10 +1593,7 @@ namespace ReagentBank
             stored.Amount -= toGive;
         }
 
-        std::map<uint32, StoredItem> changed;
-        changed[stored.ItemEntry] = stored;
-        SaveStoredItems(player, changed);
-
+        AppendStoredItemChange(trans, player, stored, previousAmount);
         return withdrawnAmount;
     }
 
@@ -1596,10 +1623,13 @@ namespace ReagentBank
             break;
         }
 
-        return WithdrawExact(player, stored, requested, stoppedForBagSpace, withdrawn);
+        auto trans = CharacterDatabase.BeginTransaction();
+        uint32 const total = WithdrawExact(player, stored, requested, stoppedForBagSpace, withdrawn, trans);
+        CommitStoredItemChanges(trans);
+        return total;
     }
 
-    static uint32 WithdrawItemAmount(Player* player, uint32 itemEntry, uint32 requestedAmount, bool& stoppedForBagSpace, ItemAmountMap& withdrawn)
+    static uint32 WithdrawItemAmount(Player* player, uint32 itemEntry, uint32 requestedAmount, bool& stoppedForBagSpace, ItemAmountMap& withdrawn, CharacterDatabaseTransaction trans)
     {
         stoppedForBagSpace = false;
 
@@ -1610,7 +1640,15 @@ namespace ReagentBank
         if (!LoadStoredItem(player, itemEntry, stored))
             return 0;
 
-        return WithdrawExact(player, stored, requestedAmount, stoppedForBagSpace, withdrawn);
+        return WithdrawExact(player, stored, requestedAmount, stoppedForBagSpace, withdrawn, trans);
+    }
+
+    static uint32 WithdrawItemAmount(Player* player, uint32 itemEntry, uint32 requestedAmount, bool& stoppedForBagSpace, ItemAmountMap& withdrawn)
+    {
+        auto trans = CharacterDatabase.BeginTransaction();
+        uint32 const total = WithdrawItemAmount(player, itemEntry, requestedAmount, stoppedForBagSpace, withdrawn, trans);
+        CommitStoredItemChanges(trans);
+        return total;
     }
 
     static uint32 WithdrawSpecificItems(Player* player, std::vector<std::pair<uint32, uint32>> const& requestedItems, bool& stoppedForBagSpace, uint32& incompleteItems, ItemAmountMap& withdrawn)
@@ -1622,6 +1660,7 @@ namespace ReagentBank
             return 0;
 
         uint32 totalWithdrawn = 0;
+        auto trans = CharacterDatabase.BeginTransaction();
 
         for (std::pair<uint32, uint32> const& requested : requestedItems)
         {
@@ -1632,7 +1671,7 @@ namespace ReagentBank
                 continue;
 
             bool full = false;
-            uint32 const itemWithdrawn = WithdrawItemAmount(player, itemEntry, requestedAmount, full, withdrawn);
+            uint32 const itemWithdrawn = WithdrawItemAmount(player, itemEntry, requestedAmount, full, withdrawn, trans);
 
             uint32 updatedTotal = 0;
             if (AddAmountChecked(totalWithdrawn, itemWithdrawn, updatedTotal))
@@ -1650,10 +1689,11 @@ namespace ReagentBank
             }
         }
 
+        CommitStoredItemChanges(trans);
         return totalWithdrawn;
     }
 
-    static uint32 WithdrawCategory(Player* player, uint32 category, bool& stoppedForBagSpace, ItemAmountMap& withdrawn)
+    static uint32 WithdrawCategory(Player* player, uint32 category, bool& stoppedForBagSpace, ItemAmountMap& withdrawn, CharacterDatabaseTransaction trans)
     {
         stoppedForBagSpace = false;
 
@@ -1684,7 +1724,7 @@ namespace ReagentBank
             stored.Amount = (*result)[2].Get<uint32>();
 
             bool full = false;
-            uint32 const itemWithdrawn = WithdrawExact(player, stored, stored.Amount, full, withdrawn);
+            uint32 const itemWithdrawn = WithdrawExact(player, stored, stored.Amount, full, withdrawn, trans);
 
             uint32 updatedTotal = 0;
             if (AddAmountChecked(totalWithdrawn, itemWithdrawn, updatedTotal))
@@ -1702,15 +1742,24 @@ namespace ReagentBank
         return totalWithdrawn;
     }
 
+    static uint32 WithdrawCategory(Player* player, uint32 category, bool& stoppedForBagSpace, ItemAmountMap& withdrawn)
+    {
+        auto trans = CharacterDatabase.BeginTransaction();
+        uint32 const total = WithdrawCategory(player, category, stoppedForBagSpace, withdrawn, trans);
+        CommitStoredItemChanges(trans);
+        return total;
+    }
+
     static uint32 WithdrawAll(Player* player, bool& stoppedForBagSpace, ItemAmountMap& withdrawn)
     {
         stoppedForBagSpace = false;
 
         uint32 totalWithdrawn = 0;
+        auto trans = CharacterDatabase.BeginTransaction();
         for (CategoryInfo const& category : Categories)
         {
             bool full = false;
-            uint32 const categoryWithdrawn = WithdrawCategory(player, category.SubClass, full, withdrawn);
+            uint32 const categoryWithdrawn = WithdrawCategory(player, category.SubClass, full, withdrawn, trans);
 
             uint32 updatedTotal = 0;
             if (AddAmountChecked(totalWithdrawn, categoryWithdrawn, updatedTotal))
@@ -1725,6 +1774,7 @@ namespace ReagentBank
             }
         }
 
+        CommitStoredItemChanges(trans);
         return totalWithdrawn;
     }
 
@@ -2001,7 +2051,8 @@ namespace ReagentBank
             "DELETE FROM mod_reagent_bank_share_invites WHERE invitee_key = {}",
             memberKey);
 
-        CharacterDatabase.CommitTransaction(trans);
+        // Synchronous like every other bank write: the member's next command reads the owner's rows.
+        CharacterDatabase.DirectCommitTransaction(trans);
 
         g_shareOwnerByKey[memberKey] = ownerKey;
 
