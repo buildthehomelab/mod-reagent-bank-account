@@ -703,7 +703,96 @@ local function SetTextureColor(texture, color, alphaOverride)
     texture:SetVertexColor(color[1] or 1, color[2] or 1, color[3] or 1, alphaOverride or color[4] or 1)
 end
 
+-- DragonUI, when it is loaded and carries the helpers borrowed here, reskins
+-- the windows in its retail art: the metal frame on rock, marble insets and
+-- red buttons. Without it everything stays stock Blizzard.
+local NineSlice = _G.DragonUI_NineSlice or _G.NineSliceUtils
+
+local function Dragon()
+    local D = _G.DragonUI
+    if D and D._dir and D.atlasinfo and D.SafeSetAtlas and D.SkinRedButton and NineSlice
+            and D.CharacterPanel and D.CharacterPanel.ReskinTab then
+        return D, D.CharacterPanel
+    end
+end
+
+local function TiledTexture(host, sublevel, file)
+    local texture = host:CreateTexture(nil, "BACKGROUND", nil, sublevel)
+    texture:SetTexture(file, "REPEAT", "REPEAT")
+    texture:SetHorizTile(true)
+    texture:SetVertTile(true)
+    return texture
+end
+
+-- DragonUI's window chrome: rock, the top streaks, and the metal frame on a
+-- frame of its own above the content so no child pane draws over it.
+local function DragonWindow(D, frame)
+    local rock = TiledTexture(frame, -8, D._dir .. "UI\\ui-background-rock")
+    rock:SetPoint("TOPLEFT", frame, "TOPLEFT", 2, -21)
+    rock:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -2, 2)
+
+    local streaks = frame:CreateTexture(nil, "BACKGROUND", nil, -7)
+    if D:SafeSetAtlas(streaks, "_UI-Frame-TopTileStreaks") then
+        streaks:SetHorizTile(true)
+        streaks:SetHeight(43)
+        streaks:SetPoint("TOPLEFT", frame, "TOPLEFT", 6, -21)
+        streaks:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -2, -21)
+    else
+        streaks:Hide()
+    end
+
+    local chrome = CreateFrame("Frame", nil, frame)
+    chrome:SetAllPoints(frame)
+    chrome:SetFrameLevel(frame:GetFrameLevel() + 30)
+    chrome:EnableMouse(false)
+    NineSlice.ApplyLayout(chrome, NineSlice.GetLayout("NoPortraitFrameTemplate") or NineSlice.GetLayout("PortraitFrameTemplate"))
+    frame.dragonChrome = chrome
+end
+
+-- Moves a window's title into DragonUI's title bar and swaps in its close
+-- button. Does nothing without DragonUI.
+function RB:SkinWindowTitle(frame, title, close)
+    local _, CP = Dragon()
+    local chrome = frame.dragonChrome
+    if not CP or not chrome then
+        return
+    end
+
+    if title then
+        title:SetParent(chrome)
+        title:SetFontObject(GameFontNormal)
+        title:SetTextColor(1.00, 0.82, 0.00)
+        title:ClearAllPoints()
+        title:SetPoint("TOP", frame, "TOP", 0, -5)
+        title:SetJustifyH("CENTER")
+    end
+
+    if close and CP.ModernizeCloseButton then
+        CP.ModernizeCloseButton(close, chrome, 1, 0)
+        close:SetFrameLevel(chrome:GetFrameLevel() + 5)
+    end
+end
+
+-- The list's FauxScrollFrame bar: DragonUI's thin one inside the pane's gutter.
+function RB:SkinScrollBar(scroll, host, topInset)
+    local _, CP = Dragon()
+    if CP and CP.ReskinScrollBar then
+        pcall(CP.ReskinScrollBar, scroll, host, topInset or 0, -8, 0, true)
+    end
+end
+
 function RB:MakeBackdrop(frame, alpha, panel)
+    local D = Dragon()
+    if D then
+        if panel then
+            TiledTexture(frame, -5, D._dir .. "UI\\ui-background-marble"):SetAllPoints(frame)
+            NineSlice.ApplyLayout(frame, NineSlice.GetLayout("InsetFrameTemplate"))
+        else
+            DragonWindow(D, frame)
+        end
+        return
+    end
+
     if panel then
         frame:SetBackdrop(INSET_BACKDROP)
         frame:SetBackdropColor(0, 0, 0, alpha or 0.60)
@@ -2437,6 +2526,7 @@ function RB:CreateAuctionShoppingFrame()
     frame.close:SetScript("OnClick", function()
         RB:HideAuctionShoppingFrame(true)
     end)
+    self:SkinWindowTitle(frame, frame.title, frame.close)
 
     frame.summary = frame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
     frame.summary:SetPoint("TOPLEFT", 16, -40)
@@ -4880,7 +4970,7 @@ function RB:CreateSettingsPanel()
     panel.scaleSlider = slider
     panel.scaleText = _G[slider:GetName() .. "Text"]
 
-    panel.resetWindow = self:CreateButton(panel, 128, 22, "Reset Window")
+    panel.resetWindow = self:CreateButton(panel, 128, 22, "Reset Window", true)
     panel.resetWindow:SetPoint("LEFT", slider, "RIGHT", 24, 0)
     panel.resetWindow:SetScript("OnClick", function()
         RB:ResetWindowPosition()
@@ -4902,7 +4992,7 @@ function RB:CreateSettingsPanel()
     panel.autoDepositLabel:SetJustifyH("LEFT")
     panel.autoDepositLabel:SetText("Every")
 
-    panel.autoDepositIntervalBox = self:CreateEditBox(panel, 66, 20)
+    panel.autoDepositIntervalBox = self:CreateEditBox(panel, 66, 20, true)
     panel.autoDepositIntervalBox:SetPoint("LEFT", panel.autoDepositLabel, "RIGHT", 12, 0)
     panel.autoDepositIntervalBox:SetScript("OnEnterPressed", function(selfBox)
         RB:ApplyAutoDepositTickerBox()
@@ -4918,13 +5008,13 @@ function RB:CreateSettingsPanel()
     panel.autoDepositSecondsText:SetPoint("LEFT", panel.autoDepositIntervalBox, "RIGHT", 10, 0)
     panel.autoDepositSecondsText:SetText("seconds")
 
-    panel.autoDepositApply = self:CreateButton(panel, 80, 22, "Apply")
+    panel.autoDepositApply = self:CreateButton(panel, 80, 22, "Apply", true)
     panel.autoDepositApply:SetPoint("LEFT", panel.autoDepositSecondsText, "RIGHT", 12, 0)
     panel.autoDepositApply:SetScript("OnClick", function()
         RB:ApplyAutoDepositTickerBox()
     end)
 
-    panel.autoDepositOff = self:CreateButton(panel, 80, 22, "Off")
+    panel.autoDepositOff = self:CreateButton(panel, 80, 22, "Off", true)
     panel.autoDepositOff:SetPoint("LEFT", panel.autoDepositApply, "RIGHT", 6, 0)
     panel.autoDepositOff:SetScript("OnClick", function()
         RB:SetAutoDepositTickerSeconds(0)
@@ -5151,17 +5241,39 @@ local function NextWidgetName(kind)
     return "ReagentBankUI" .. kind .. widgetCount
 end
 
-function RB:CreateButton(parent, width, height, label)
+-- stock = true keeps the Blizzard look (the Interface Options panel, which
+-- DragonUI leaves alone).
+function RB:CreateButton(parent, width, height, label, stock)
     local button = CreateFrame("Button", NextWidgetName("Button"), parent, "UIPanelButtonTemplate")
     button:SetWidth(width)
     button:SetHeight(height)
     button:SetText(label or "")
+
+    local D = not stock and Dragon()
+    if D then
+        D.SkinRedButton(button)
+    end
+
     return button
+end
+
+-- DragonUI's inputs: the stock box with its border darkened to a plain well.
+local function SkinEditBox(box)
+    local regions = { box:GetRegions() }
+    for i = 1, #regions do
+        local region = regions[i]
+        if region:GetObjectType() == "Texture" then
+            local path = region:GetTexture()
+            if type(path) == "string" and path:lower():find("common%-input%-border") then
+                region:SetTexture(0, 0, 0, 0.55)
+            end
+        end
+    end
 end
 
 -- InputBoxTemplate draws its border 5px outside the box on each side, so the
 -- box itself is narrowed to keep the old footprint.
-function RB:CreateEditBox(parent, width, height)
+function RB:CreateEditBox(parent, width, height, stock)
     local box = CreateFrame("EditBox", NextWidgetName("EditBox"), parent, "InputBoxTemplate")
     box:SetWidth(width - 10)
     box:SetHeight(20)
@@ -5177,6 +5289,10 @@ function RB:CreateEditBox(parent, width, height)
     box:SetScript("OnTextChanged", function()
         RB:UpdateControls()
     end)
+
+    if not stock and Dragon() then
+        SkinEditBox(box)
+    end
 
     return box
 end
@@ -5275,6 +5391,14 @@ function RB:CreateFrame()
     f.close:SetScript("OnClick", function()
         RB:Close()
     end)
+
+    if f.dragonChrome then
+        -- The title moves up into the title bar; the mode line keeps the header.
+        self:SkinWindowTitle(f, f.title, f.close)
+        f.modeText:ClearAllPoints()
+        f.modeText:SetPoint("LEFT", f.header, "LEFT", 12, 0)
+        f.modeText:SetPoint("RIGHT", f.header, "RIGHT", -12, 0)
+    end
 
     f.rootDeposit = self:CreateButton(f, ROOT_ACTION_BUTTON_WIDTH, ROOT_BUTTON_HEIGHT, "Deposit All")
     f.rootDeposit:SetPoint("TOPLEFT", ROOT_BUTTON_ROW_X, ROOT_BUTTON_ROW_Y)
@@ -5542,6 +5666,7 @@ function RB:CreateFrame()
             RB:RefreshListWindow()
         end)
     end)
+    self:SkinScrollBar(f.listScroll, f.list, 30)
     f.listScroll:Hide()
 
     f.detail = CreateFrame("Frame", nil, f)
@@ -5664,6 +5789,7 @@ function RB:CreateFrame()
     f.quickWithdrawClose:SetScript("OnClick", function()
         RB:HideWithdrawPrompt()
     end)
+    self:SkinWindowTitle(f.quickWithdraw, f.quickWithdrawTitle, f.quickWithdrawClose)
 
     f.quickWithdrawIcon = f.quickWithdraw:CreateTexture(nil, "ARTWORK")
     f.quickWithdrawIcon:SetWidth(38)
@@ -5747,6 +5873,7 @@ function RB:CreateFrame()
     f.shoppingPromptClose:SetScript("OnClick", function()
         RB:HideShoppingAmountPrompt()
     end)
+    self:SkinWindowTitle(f.shoppingPrompt, f.shoppingPromptTitle, f.shoppingPromptClose)
 
     f.shoppingPromptIcon = f.shoppingPrompt:CreateTexture(nil, "ARTWORK")
     f.shoppingPromptIcon:SetWidth(38)
@@ -5826,6 +5953,7 @@ function RB:CreateFrame()
     f.depositPreview.close:SetScript("OnClick", function()
         RB:HideDepositPreview()
     end)
+    self:SkinWindowTitle(f.depositPreview, f.depositPreview.title, f.depositPreview.close)
 
     f.depositPreview.summary = f.depositPreview:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
     f.depositPreview.summary:SetPoint("TOPLEFT", 18, -42)

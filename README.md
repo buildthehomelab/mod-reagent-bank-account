@@ -20,7 +20,7 @@ This module adds a server-backed reagent bank for trade goods, gems, and craftin
 - Optional deposit preview confirmation
 - Reverse last deposit/withdraw transaction
 - Sort categories and items by several modes
-- Movable, scalable addon window built from the default Blizzard UI
+- Movable, scalable addon window built from the default Blizzard UI, reskinned in DragonUI's retail look when [DragonUI](https://github.com/buildthehomelab/wow-addon-DragonUI) is installed
 - Periodic auto-deposit timer (default every 300 seconds; paused while a profession window is open)
 - Character paperdoll launcher button
 
