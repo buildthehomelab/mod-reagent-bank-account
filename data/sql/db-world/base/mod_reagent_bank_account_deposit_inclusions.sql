@@ -9,4 +9,11 @@ CREATE TABLE IF NOT EXISTS `mod_reagent_bank_account_deposit_inclusions_zz_custo
 
 INSERT IGNORE INTO `mod_reagent_bank_account_deposit_inclusions_zz_custom` (`item_entry`, `item_subclass`, `comment`) VALUES
 (18945, 11, 'Dark Iron Residue (Quest class, Thorium Brotherhood turn-in)'),
-(15420, 11, 'Ironfeather (Trade Goods with no subtype, owlbeast drop)');
+(15420, 11, 'Ironfeather (Trade Goods with no subtype, owlbeast drop)'),
+(9504010, 11, 'Archaeology keystone: Dwarf Rune Stone'),
+(9504011, 11, 'Archaeology keystone: Highborne Scroll'),
+(9504012, 11, 'Archaeology keystone: Troll Tablet'),
+(9504014, 11, 'Archaeology keystone: Draenei Tome'),
+(9504015, 11, 'Archaeology keystone: Orc Blood Text'),
+(9504016, 11, 'Archaeology keystone: Nerubian Obelisk'),
+(9504017, 11, 'Archaeology keystone: Vrykul Rune Stick');
