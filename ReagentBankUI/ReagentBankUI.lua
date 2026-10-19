@@ -1416,7 +1416,7 @@ end
 
 function RB:IsProfessionWindowOpen()
     local archaeology = _G.ArchaeologyUI and _G.ArchaeologyUI.Research
-    if archaeology and archaeology.page and archaeology.page:IsShown() then
+    if archaeology and archaeology.page and archaeology.page:IsVisible() then
         return true
     end
     return (TradeSkillFrame and TradeSkillFrame:IsShown()) or self:GetActiveRecipeProvider() ~= nil
