@@ -102,3 +102,5 @@ Place the module in:
 
 ```txt
 modules/mod-reagent-bank-account/
+
+Archaeology integration: the deposit inclusions include all seven mod-archaeology keystones under Other Trade Goods. Apply the updated SQL and restart to reload inclusions. ArchaeologyUI provides a Bank slot for exact-quantity withdrawals into bags through the existing server command.
