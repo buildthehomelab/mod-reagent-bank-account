@@ -47,8 +47,10 @@ local DIALOG_BACKDROP = {
     insets = { left = 11, right = 12, top = 12, bottom = 11 },
 }
 
+-- Panes inside a window without DragonUI: the stock options-box border
+-- (OptionsBoxTemplate) over the tooltip background in dark grey.
 local INSET_BACKDROP = {
-    bgFile = "Interface\\ChatFrame\\ChatFrameBackground",
+    bgFile = "Interface\\Tooltips\\UI-Tooltip-Background",
     edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
     tile = true,
     tileSize = 16,
@@ -749,12 +751,48 @@ local function DragonWindow(D, frame)
     frame.dragonChrome = chrome
 end
 
+-- Without DragonUI a window's title sits on the stock UI-DialogBox-Header
+-- plate, stretched to fit the text as the title changes.
+function RB:StockWindowTitle(frame, title)
+    local function piece(left, right)
+        local texture = frame:CreateTexture(nil, "ARTWORK")
+        texture:SetTexture("Interface\\DialogFrame\\UI-DialogBox-Header")
+        texture:SetTexCoord(left, right, 0, 0.63)
+        texture:SetHeight(40)
+        return texture
+    end
+
+    local plate = piece(0.31, 0.67)
+    plate:SetPoint("TOP", frame, "TOP", 0, 12)
+    local leftCap = piece(0.21, 0.31)
+    leftCap:SetWidth(30)
+    leftCap:SetPoint("RIGHT", plate, "LEFT")
+    local rightCap = piece(0.67, 0.77)
+    rightCap:SetWidth(30)
+    rightCap:SetPoint("LEFT", plate, "RIGHT")
+
+    title:SetFontObject(GameFontNormal)
+    title:SetTextColor(1.00, 0.82, 0.00)
+    title:ClearAllPoints()
+    title:SetPoint("TOP", plate, "TOP", 0, -14)
+    title:SetJustifyH("CENTER")
+
+    local function fit()
+        plate:SetWidth(math.max(60, (title:GetStringWidth() or 0) + 10))
+    end
+    fit()
+    hooksecurefunc(title, "SetText", fit)
+end
+
 -- Moves a window's title into DragonUI's title bar and swaps in its close
--- button. Does nothing without DragonUI.
+-- button, or onto the stock header plate without DragonUI.
 function RB:SkinWindowTitle(frame, title, close)
     local _, CP = Dragon()
     local chrome = frame.dragonChrome
     if not CP or not chrome then
+        if title then
+            self:StockWindowTitle(frame, title)
+        end
         return
     end
 
@@ -795,18 +833,59 @@ function RB:MakeBackdrop(frame, alpha, panel)
 
     if panel then
         frame:SetBackdrop(INSET_BACKDROP)
-        frame:SetBackdropColor(0, 0, 0, alpha or 0.60)
-        frame:SetBackdropBorderColor(0.60, 0.60, 0.60, 1.00)
+        frame:SetBackdropColor(0.10, 0.10, 0.10, 1.00)
+        frame:SetBackdropBorderColor(0.40, 0.40, 0.40, 1.00)
         return
     end
 
     frame:SetBackdrop(DIALOG_BACKDROP)
 end
 
+-- Stock lists have no zebra stripes or per-row column lines; the quest-title
+-- highlight on hover is all they show.
 function RB:StyleListRow(row, index)
-    SetTextureColor(row.bg, (index % 2) == 0 and ROW_EVEN_COLOR or ROW_ODD_COLOR)
     SetTextureColor(row.fill, ROW_FILL_COLOR)
+    if not Dragon() then
+        -- The amount bar behind the row draws in the stock status-bar art.
+        if row.fill then
+            row.fill:SetTexture("Interface\\TargetingFrame\\UI-StatusBar")
+        end
+        if row.bg then
+            row.bg:Hide()
+        end
+        if row.split then
+            row.split:Hide()
+        end
+        return
+    end
+
+    SetTextureColor(row.bg, (index % 2) == 0 and ROW_EVEN_COLOR or ROW_ODD_COLOR)
     SetTextureColor(row.split, DIVIDER_COLOR)
+end
+
+-- One stock list column header (the Who list's tab art) across a span of
+-- host; each edge is an offset from host's LEFT or RIGHT side.
+function RB:StockColumnTab(host, leftSide, leftX, rightSide, rightX)
+    local function piece(left, right)
+        local texture = host:CreateTexture(nil, "BACKGROUND")
+        texture:SetTexture("Interface\\FriendsFrame\\WhoFrame-ColumnTabs")
+        texture:SetTexCoord(left, right, 0, 0.75)
+        return texture
+    end
+
+    local leftCap = piece(0, 0.078125)
+    leftCap:SetWidth(5)
+    leftCap:SetPoint("TOPLEFT", host, "TOP" .. leftSide, leftX, 0)
+    leftCap:SetPoint("BOTTOMLEFT", host, "BOTTOM" .. leftSide, leftX, 0)
+
+    local rightCap = piece(0.90625, 0.96875)
+    rightCap:SetWidth(4)
+    rightCap:SetPoint("TOPRIGHT", host, "TOP" .. rightSide, rightX, 0)
+    rightCap:SetPoint("BOTTOMRIGHT", host, "BOTTOM" .. rightSide, rightX, 0)
+
+    local middle = piece(0.078125, 0.90625)
+    middle:SetPoint("TOPLEFT", leftCap, "TOPRIGHT")
+    middle:SetPoint("BOTTOMRIGHT", rightCap, "BOTTOMLEFT")
 end
 
 function RB:SetButtonEnabled(button, enabled)
@@ -1976,7 +2055,11 @@ function RB:UpdateShoppingAmountPromptControls()
             self.frame.shoppingPromptHint:SetTextColor(1.00, 0.82, 0.32)
         else
             self.frame.shoppingPromptHint:SetText("This replaces the amount on your AH shopping list.")
-            self.frame.shoppingPromptHint:SetTextColor(0.78, 0.82, 0.88)
+            if Dragon() then
+                self.frame.shoppingPromptHint:SetTextColor(0.78, 0.82, 0.88)
+            else
+                self.frame.shoppingPromptHint:SetTextColor(GameFontDisableSmall:GetTextColor())
+            end
         end
     end
 
@@ -2514,12 +2597,11 @@ function RB:CreateAuctionShoppingFrame()
     self:MakeBackdrop(frame)
     frame:Hide()
 
-    frame.title = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+    frame.title = frame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     frame.title:SetPoint("TOPLEFT", 16, -16)
     frame.title:SetPoint("RIGHT", -40, 0)
     frame.title:SetJustifyH("LEFT")
     frame.title:SetText("AH Shopping List")
-    frame.title:SetTextColor(1.00, 0.82, 0.28)
 
     frame.close = self:CreateCloseButton(frame)
     frame.close:SetPoint("TOPRIGHT", -4, -4)
@@ -2532,7 +2614,9 @@ function RB:CreateAuctionShoppingFrame()
     frame.summary:SetPoint("TOPLEFT", 16, -40)
     frame.summary:SetPoint("RIGHT", -16, 0)
     frame.summary:SetJustifyH("LEFT")
-    frame.summary:SetTextColor(0.78, 0.82, 0.88)
+    if Dragon() then
+        frame.summary:SetTextColor(0.78, 0.82, 0.88)
+    end
     frame.summary:SetText("")
 
     frame.header = CreateFrame("Frame", nil, frame)
@@ -2540,17 +2624,24 @@ function RB:CreateAuctionShoppingFrame()
     frame.header:SetPoint("TOPLEFT", 14, -62)
     frame.header:SetPoint("RIGHT", -14, 0)
 
-    frame.header.bg = frame.header:CreateTexture(nil, "BACKGROUND")
-    frame.header.bg:SetTexture("Interface\\ChatFrame\\ChatFrameBackground")
-    frame.header.bg:SetAllPoints(frame.header)
-    SetTextureColor(frame.header.bg, LIST_HEADER_COLOR)
+    local headerFont = "GameFontNormalSmall"
+    if Dragon() then
+        frame.header.bg = frame.header:CreateTexture(nil, "BACKGROUND")
+        frame.header.bg:SetTexture("Interface\\ChatFrame\\ChatFrameBackground")
+        frame.header.bg:SetAllPoints(frame.header)
+        SetTextureColor(frame.header.bg, LIST_HEADER_COLOR)
+    else
+        headerFont = "GameFontHighlightSmall"
+        self:StockColumnTab(frame.header, "LEFT", 0, "RIGHT", -89)
+        self:StockColumnTab(frame.header, "RIGHT", -89, "RIGHT", 0)
+    end
 
-    frame.headerName = frame.header:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    frame.headerName = frame.header:CreateFontString(nil, "OVERLAY", headerFont)
     frame.headerName:SetPoint("LEFT", 30, 0)
     frame.headerName:SetJustifyH("LEFT")
     frame.headerName:SetText("Item")
 
-    frame.headerCount = frame.header:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    frame.headerCount = frame.header:CreateFontString(nil, "OVERLAY", headerFont)
     frame.headerCount:SetWidth(82)
     frame.headerCount:SetPoint("RIGHT", -7, 0)
     frame.headerCount:SetJustifyH("RIGHT")
@@ -5375,7 +5466,7 @@ function RB:CreateFrame()
     f.header:SetPoint("TOPRIGHT", -8, -8)
     f.header:SetHeight(42)
 
-    f.title = f.header:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+    f.title = f.header:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     f.title:SetPoint("LEFT", 12, 1)
     f.title:SetText("Reagent Bank")
     f.title:SetJustifyH("LEFT")
@@ -5392,13 +5483,13 @@ function RB:CreateFrame()
         RB:Close()
     end)
 
-    if f.dragonChrome then
-        -- The title moves up into the title bar; the mode line keeps the header.
-        self:SkinWindowTitle(f, f.title, f.close)
-        f.modeText:ClearAllPoints()
-        f.modeText:SetPoint("LEFT", f.header, "LEFT", 12, 0)
-        f.modeText:SetPoint("RIGHT", f.header, "RIGHT", -12, 0)
-    end
+    -- The title moves up into the title bar (or onto the stock header
+    -- plate); the mode line keeps the header, below the plate when stock.
+    self:SkinWindowTitle(f, f.title, f.close)
+    f.modeText:ClearAllPoints()
+    local modeY = f.dragonChrome and 0 or -9
+    f.modeText:SetPoint("LEFT", f.header, "LEFT", 12, modeY)
+    f.modeText:SetPoint("RIGHT", f.header, "RIGHT", -12, modeY)
 
     f.rootDeposit = self:CreateButton(f, ROOT_ACTION_BUTTON_WIDTH, ROOT_BUTTON_HEIGHT, "Deposit All")
     f.rootDeposit:SetPoint("TOPLEFT", ROOT_BUTTON_ROW_X, ROOT_BUTTON_ROW_Y)
@@ -5557,35 +5648,42 @@ function RB:CreateFrame()
     f.listHeader:SetPoint("TOPLEFT", 8, -7)
     f.listHeader:SetPoint("RIGHT", -8, 0)
 
-    f.listHeader.bg = f.listHeader:CreateTexture(nil, "BACKGROUND")
-    f.listHeader.bg:SetTexture("Interface\\ChatFrame\\ChatFrameBackground")
-    f.listHeader.bg:SetAllPoints(f.listHeader)
-    SetTextureColor(f.listHeader.bg, LIST_HEADER_COLOR)
+    local headerFont = "GameFontNormalSmall"
+    if Dragon() then
+        f.listHeader.bg = f.listHeader:CreateTexture(nil, "BACKGROUND")
+        f.listHeader.bg:SetTexture("Interface\\ChatFrame\\ChatFrameBackground")
+        f.listHeader.bg:SetAllPoints(f.listHeader)
+        SetTextureColor(f.listHeader.bg, LIST_HEADER_COLOR)
 
-    f.listHeader.line = f.listHeader:CreateTexture(nil, "ARTWORK")
-    f.listHeader.line:SetTexture("Interface\\ChatFrame\\ChatFrameBackground")
-    f.listHeader.line:SetPoint("BOTTOMLEFT", 0, 0)
-    f.listHeader.line:SetPoint("BOTTOMRIGHT", 0, 0)
-    f.listHeader.line:SetHeight(1)
-    SetTextureColor(f.listHeader.line, DIVIDER_COLOR)
+        f.listHeader.line = f.listHeader:CreateTexture(nil, "ARTWORK")
+        f.listHeader.line:SetTexture("Interface\\ChatFrame\\ChatFrameBackground")
+        f.listHeader.line:SetPoint("BOTTOMLEFT", 0, 0)
+        f.listHeader.line:SetPoint("BOTTOMRIGHT", 0, 0)
+        f.listHeader.line:SetHeight(1)
+        SetTextureColor(f.listHeader.line, DIVIDER_COLOR)
 
-    f.headerName = f.listHeader:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+        f.listHeader.split = f.listHeader:CreateTexture(nil, "ARTWORK")
+        f.listHeader.split:SetTexture("Interface\\ChatFrame\\ChatFrameBackground")
+        f.listHeader.split:SetWidth(1)
+        f.listHeader.split:SetPoint("TOP", f.listHeader, "TOPRIGHT", -LIST_COLUMN_SPLIT, -4)
+        f.listHeader.split:SetPoint("BOTTOM", f.listHeader, "BOTTOMRIGHT", -LIST_COLUMN_SPLIT, 3)
+        SetTextureColor(f.listHeader.split, DIVIDER_COLOR)
+    else
+        headerFont = "GameFontHighlightSmall"
+        self:StockColumnTab(f.listHeader, "LEFT", 0, "RIGHT", -LIST_COLUMN_SPLIT)
+        self:StockColumnTab(f.listHeader, "RIGHT", -LIST_COLUMN_SPLIT, "RIGHT", 0)
+    end
+
+    f.headerName = f.listHeader:CreateFontString(nil, "OVERLAY", headerFont)
     f.headerName:SetPoint("LEFT", 32, 0)
     f.headerName:SetJustifyH("LEFT")
     f.headerName:SetText("Name")
 
-    f.headerCount = f.listHeader:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    f.headerCount = f.listHeader:CreateFontString(nil, "OVERLAY", headerFont)
     f.headerCount:SetWidth(LIST_COUNT_COLUMN_WIDTH)
     f.headerCount:SetPoint("RIGHT", -LIST_COUNT_COLUMN_INSET, 0)
     f.headerCount:SetJustifyH("RIGHT")
     f.headerCount:SetText("Stored")
-
-    f.listHeader.split = f.listHeader:CreateTexture(nil, "ARTWORK")
-    f.listHeader.split:SetTexture("Interface\\ChatFrame\\ChatFrameBackground")
-    f.listHeader.split:SetWidth(1)
-    f.listHeader.split:SetPoint("TOP", f.listHeader, "TOPRIGHT", -LIST_COLUMN_SPLIT, -4)
-    f.listHeader.split:SetPoint("BOTTOM", f.listHeader, "BOTTOMRIGHT", -LIST_COLUMN_SPLIT, 3)
-    SetTextureColor(f.listHeader.split, DIVIDER_COLOR)
 
     f.rows = {}
     for i = 1, ROW_COUNT do
@@ -5941,11 +6039,10 @@ function RB:CreateFrame()
     self:MakeBackdrop(f.depositPreview)
     f.depositPreview:Hide()
 
-    f.depositPreview.title = f.depositPreview:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+    f.depositPreview.title = f.depositPreview:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     f.depositPreview.title:SetPoint("TOPLEFT", 16, -13)
     f.depositPreview.title:SetPoint("RIGHT", -48, 0)
     f.depositPreview.title:SetJustifyH("LEFT")
-    f.depositPreview.title:SetTextColor(1.00, 0.82, 0.28)
     f.depositPreview.title:SetText("Deposit Preview")
 
     f.depositPreview.close = self:CreateCloseButton(f.depositPreview)
@@ -5959,7 +6056,9 @@ function RB:CreateFrame()
     f.depositPreview.summary:SetPoint("TOPLEFT", 18, -42)
     f.depositPreview.summary:SetPoint("RIGHT", -18, 0)
     f.depositPreview.summary:SetJustifyH("LEFT")
-    f.depositPreview.summary:SetTextColor(0.82, 0.82, 0.82)
+    if Dragon() then
+        f.depositPreview.summary:SetTextColor(0.82, 0.82, 0.82)
+    end
     f.depositPreview.summary:SetText("")
 
     f.depositPreview.rows = {}
