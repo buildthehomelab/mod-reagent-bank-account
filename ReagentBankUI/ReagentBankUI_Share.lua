@@ -240,6 +240,9 @@ function RB:BuildSharePanel(f)
     p.title:SetPoint("TOPLEFT", 18, -16)
     p.title:SetText("Reagent Bank Sharing")
     p.title:SetTextColor(1.00, 0.82, 0.28)
+    if not p.dragonChrome then
+        self:StockWindowTitle(p, p.title)
+    end
 
     p.closeBtn = self:CreateCloseButton(p)
     p.closeBtn:SetPoint("TOPRIGHT", -4, -4)
@@ -389,6 +392,9 @@ function RB:BuildShareInvitePrompt(f)
     p.title:SetPoint("TOPLEFT", 18, -16)
     p.title:SetText("Invite to Shared Bank")
     p.title:SetTextColor(1.00, 0.82, 0.28)
+    if not p.dragonChrome then
+        self:StockWindowTitle(p, p.title)
+    end
 
     p.closeBtn = self:CreateCloseButton(p)
     p.closeBtn:SetPoint("TOPRIGHT", -4, -4)
@@ -487,6 +493,9 @@ function RB:BuildShareInviteDialog(f)
     d.title:SetPoint("TOPLEFT", 18, -16)
     d.title:SetText("Reagent Bank Invite")
     d.title:SetTextColor(1.00, 0.82, 0.28)
+    if not d.dragonChrome then
+        self:StockWindowTitle(d, d.title)
+    end
 
     d.closeBtn = self:CreateCloseButton(d)
     d.closeBtn:SetPoint("TOPRIGHT", -4, -4)
