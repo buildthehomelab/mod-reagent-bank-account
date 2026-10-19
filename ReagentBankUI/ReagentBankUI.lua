@@ -47,7 +47,8 @@ local DIALOG_BACKDROP = {
     insets = { left = 11, right = 12, top = 12, bottom = 11 },
 }
 
--- The stock options-box look (OptionsBoxTemplate) for panes inside a window.
+-- Panes inside a window without DragonUI: the stock options-box border
+-- (OptionsBoxTemplate) over the tooltip background in dark grey.
 local INSET_BACKDROP = {
     bgFile = "Interface\\Tooltips\\UI-Tooltip-Background",
     edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
@@ -845,6 +846,10 @@ end
 function RB:StyleListRow(row, index)
     SetTextureColor(row.fill, ROW_FILL_COLOR)
     if not Dragon() then
+        -- The amount bar behind the row draws in the stock status-bar art.
+        if row.fill then
+            row.fill:SetTexture("Interface\\TargetingFrame\\UI-StatusBar")
+        end
         if row.bg then
             row.bg:Hide()
         end
@@ -2050,7 +2055,11 @@ function RB:UpdateShoppingAmountPromptControls()
             self.frame.shoppingPromptHint:SetTextColor(1.00, 0.82, 0.32)
         else
             self.frame.shoppingPromptHint:SetText("This replaces the amount on your AH shopping list.")
-            self.frame.shoppingPromptHint:SetTextColor(0.78, 0.82, 0.88)
+            if Dragon() then
+                self.frame.shoppingPromptHint:SetTextColor(0.78, 0.82, 0.88)
+            else
+                self.frame.shoppingPromptHint:SetTextColor(GameFontDisableSmall:GetTextColor())
+            end
         end
     end
 
@@ -2605,7 +2614,9 @@ function RB:CreateAuctionShoppingFrame()
     frame.summary:SetPoint("TOPLEFT", 16, -40)
     frame.summary:SetPoint("RIGHT", -16, 0)
     frame.summary:SetJustifyH("LEFT")
-    frame.summary:SetTextColor(0.78, 0.82, 0.88)
+    if Dragon() then
+        frame.summary:SetTextColor(0.78, 0.82, 0.88)
+    end
     frame.summary:SetText("")
 
     frame.header = CreateFrame("Frame", nil, frame)
@@ -5476,8 +5487,9 @@ function RB:CreateFrame()
     -- plate); the mode line keeps the header, below the plate when stock.
     self:SkinWindowTitle(f, f.title, f.close)
     f.modeText:ClearAllPoints()
-    f.modeText:SetPoint("LEFT", f.header, "LEFT", 12, f.dragonChrome and 0 or -9)
-    f.modeText:SetPoint("RIGHT", f.header, "RIGHT", -12, 0)
+    local modeY = f.dragonChrome and 0 or -9
+    f.modeText:SetPoint("LEFT", f.header, "LEFT", 12, modeY)
+    f.modeText:SetPoint("RIGHT", f.header, "RIGHT", -12, modeY)
 
     f.rootDeposit = self:CreateButton(f, ROOT_ACTION_BUTTON_WIDTH, ROOT_BUTTON_HEIGHT, "Deposit All")
     f.rootDeposit:SetPoint("TOPLEFT", ROOT_BUTTON_ROW_X, ROOT_BUTTON_ROW_Y)
@@ -6044,7 +6056,9 @@ function RB:CreateFrame()
     f.depositPreview.summary:SetPoint("TOPLEFT", 18, -42)
     f.depositPreview.summary:SetPoint("RIGHT", -18, 0)
     f.depositPreview.summary:SetJustifyH("LEFT")
-    f.depositPreview.summary:SetTextColor(0.82, 0.82, 0.82)
+    if Dragon() then
+        f.depositPreview.summary:SetTextColor(0.82, 0.82, 0.82)
+    end
     f.depositPreview.summary:SetText("")
 
     f.depositPreview.rows = {}
