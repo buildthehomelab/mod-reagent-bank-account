@@ -1121,18 +1121,21 @@ namespace ReagentBank
 
     // Every .rbank command runs on the world thread (CMSG_MESSAGECHAT is THREADUNSAFE) and
     // reads the bank with a synchronous query, so the write has to be in the table before
-    // the command returns. With an async commit, two commands in the same tick both read
-    // the old amount and paid the same stock out twice.
-    // The bags go in the same transaction, as the core does for trade and mail: otherwise a
-    // crash before the next character save brings deposited items back to the bags (dupe)
-    // or drops withdrawn ones (loss).
+    // the command returns. Without that, two commands in the same tick both read the old
+    // amount and paid the same stock out twice.
+    // The bags go in the same transaction: otherwise a crash before the next character save
+    // brings deposited items back to the bags (dupe) or drops withdrawn ones (loss). The
+    // core prepares those statements on its async connections only, so the transaction goes
+    // through the async pool (DirectCommitTransaction runs on a sync connection, where they
+    // don't exist, and asserts), and the command waits for it.
     static void CommitStoredItemChanges(Player* player, CharacterDatabaseTransaction trans)
     {
         if (!trans->GetSize())
             return;
 
         player->SaveInventoryAndGoldToDB(trans);
-        CharacterDatabase.DirectCommitTransaction(trans);
+        if (!CharacterDatabase.AsyncCommitTransaction(trans).m_future.get())
+            LOG_ERROR("module", "ReagentBankAccount: bank and bag save failed for player {}.", player->GetGUID().ToString());
     }
 
     static void SaveStoredItems(Player* player, std::map<uint32, StoredItem> const& previousItems, std::map<uint32, StoredItem> const& changedItems)
@@ -1540,7 +1543,8 @@ namespace ReagentBank
                 continue;
 
             // GetItemCount would also count stacks in a trade window, which DestroyItemCount
-            // then skips (taking bank stacks instead), so count and take the same stacks here.
+            // then skips (taking character bank stacks instead), so count and take the same
+            // stacks here.
             uint32 availableInBags = 0;
             ForEachBagStack(player, itemEntry, [&](Item* item)
                 {
