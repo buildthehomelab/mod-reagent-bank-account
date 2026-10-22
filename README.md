@@ -32,6 +32,7 @@ This module adds a server-backed reagent bank for trade goods, gems, and craftin
 - Anything listed in the world table `mod_reagent_bank_account_deposit_inclusions_zz_custom` (`item_entry`, `item_subclass` = bank category). It ships with Dark Iron Residue and Ironfeather
 - Items listed in `mod_reagent_bank_account_deposit_exclusions_zz_custom` are never deposited
 - Soulbound and quest-bound items stay in your bags, since the bank can be shared between characters, unless the inclusions table lists them (the archaeology keystones are soulbound). Conjured and timed items always stay in your bags
+- Archaeology keystones: the deposit inclusions list all seven mod-archaeology keystones under Other Trade Goods (apply the updated SQL and restart to reload inclusions). ArchaeologyUI has a Bank slot for exact-quantity withdrawals into bags through the existing server command
 
 Deposits skip any item a quest in your log asks for, so auto-deposit cannot take quest items before you turn them in. Deposits are refused while a trade window is open, and periodic auto-deposit waits until the trade is closed.
 
@@ -46,7 +47,7 @@ The profession controls live in the profession window itself. With [RetailProfes
 - **Add to Shopping List** puts what bags and bank are short of, for the amount you chose, on the AH shopping list
 - Each reagent shows what is waiting in the bank
 
-The sidebar ReagentBankUI used to dock beside the profession window is gone: it repeated all of the above. On the Blizzard profession window you still get:
+On the Blizzard profession window you get:
 
 - Per-reagent `+N` badges on the recipe's reagent rows showing what is waiting in the bank, green when bags plus bank cover the craft and orange when they do not
 - `/rbank craft [count]` withdraws the missing reagents for the selected recipe, `/rbank plan [count]` prints what to withdraw, what to buy and what is running low, and `/rbank autodeposit` turns the leftover deposit on or off
@@ -99,9 +100,29 @@ When [Auctionator](https://github.com/buildthehomelab/wow-addon-Auctionator) is 
 
 ### Server
 
-Place the module in:
+1. Place the module in `modules/mod-reagent-bank-account/`:
 
-```txt
-modules/mod-reagent-bank-account/
+   ```bash
+   cd modules
+   git clone https://github.com/buildthehomelab/mod-reagent-bank-account.git
+   ```
 
-Archaeology integration: the deposit inclusions include all seven mod-archaeology keystones under Other Trade Goods. Apply the updated SQL and restart to reload inclusions. ArchaeologyUI provides a Bank slot for exact-quantity withdrawals into bags through the existing server command.
+2. Rebuild the server.
+3. Apply the SQL in `data/sql/db-characters/base` and `data/sql/db-world/base` if your server doesn't apply module SQL by itself (`mod_reagent_bank_account` and the deposit inclusions/exclusions tables).
+4. Copy `conf/mod_reagent_bank_account.conf.dist` to `conf/mod_reagent_bank_account.conf` and adjust it (see Configuration), then start the server.
+
+### Addon
+
+Copy the `ReagentBankUI` folder into the client's `Interface/AddOns/` folder (`Interface/AddOns/ReagentBankUI/ReagentBankUI.toc`). The addon is required: the module has no banker NPC.
+
+## Configuration
+
+Options in `mod_reagent_bank_account.conf`:
+
+| Option | Default | Meaning |
+| --- | --- | --- |
+| `ReagentBankAccount.Enable` | `1` | Turns on the `.rbank` command API the addon uses. |
+| `ReagentBankAccount.AccountWide` | `1` | `1` shares one bank across all characters on an account; `0` gives each character its own. |
+| `ReagentBankAccount.AutoMigrate` | `1` | Rewrites stored rows when `AccountWide` changes: character to account sums an account's characters, account to character moves the shared bank to the account's lowest-GUID character. |
+| `ReagentBankAccount.MaxItemsPerPage` | `16` | Item rows sent to the addon per category page. Capped at 50. |
+| `ReagentBankAccount.EnableSharing` | `0` | Lets players share a bank (account to account with `AccountWide = 1`, character to character with `0`). Members' items merge into the owner's bank on join and stay there if a member leaves. Don't change `AccountWide` once players have set up shares. |
