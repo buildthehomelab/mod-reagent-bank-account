@@ -84,6 +84,8 @@ static bool g_reagentBankSharingEnabled = false;
 static std::unordered_set<uint32> g_reagentBankDepositExclusions;
 // Item entry -> bank category for items outside Trade Goods/Gems that still count as reagents.
 static std::unordered_map<uint32, uint32> g_reagentBankExtraItems;
+// Items listed in the inclusions table: an explicit choice, so they skip the bonding check.
+static std::unordered_set<uint32> g_reagentBankInclusionItems;
 static std::unordered_map<uint32, uint32> g_shareOwnerByKey;
 
 using Acore::ChatCommands::ChatCommandTable;
@@ -590,6 +592,7 @@ namespace ReagentBank
     static void LoadExtraReagents()
     {
         g_reagentBankExtraItems.clear();
+        g_reagentBankInclusionItems.clear();
 
         std::unordered_map<uint32, std::map<uint32, uint32>> recipesBySkill;
         for (SkillLineAbilityEntry const* ability : sSkillLineAbilityStore)
@@ -657,6 +660,7 @@ namespace ReagentBank
                     itemSubclass = ITEM_SUBCLASS_TRADE_GOODS_OTHER;
 
                 g_reagentBankExtraItems[itemEntry] = itemSubclass;
+                g_reagentBankInclusionItems.insert(itemEntry);
                 ++inclusionCount;
             } while (result->NextRow());
         }
@@ -1027,6 +1031,16 @@ namespace ReagentBank
         if (proto->GetMaxStackSize() <= 1)
             return false;
 
+        // Conjured and timed items would stop expiring in the bank. Soulbound and quest-bound
+        // items stay in the bags because the bank can be shared between characters, unless the
+        // inclusions table lists them on purpose (archaeology keystones are soulbound).
+        if (proto->HasFlag(ITEM_FLAG_CONJURED) || proto->Duration)
+            return false;
+
+        if ((proto->Bonding == BIND_WHEN_PICKED_UP || proto->Bonding == BIND_QUEST_ITEM) &&
+            !g_reagentBankInclusionItems.contains(proto->ItemId))
+            return false;
+
         itemEntry = proto->ItemId;
 
         if (proto->Class == ITEM_CLASS_TRADE_GOODS || proto->Class == ITEM_CLASS_GEM)
@@ -1107,15 +1121,24 @@ namespace ReagentBank
 
     // Every .rbank command runs on the world thread (CMSG_MESSAGECHAT is THREADUNSAFE) and
     // reads the bank with a synchronous query, so the write has to be in the table before
-    // the command returns. With an async commit, two commands in the same tick both read
-    // the old amount and paid the same stock out twice.
-    static void CommitStoredItemChanges(CharacterDatabaseTransaction trans)
+    // the command returns. Without that, two commands in the same tick both read the old
+    // amount and paid the same stock out twice.
+    // The bags go in the same transaction: otherwise a crash before the next character save
+    // brings deposited items back to the bags (dupe) or drops withdrawn ones (loss). The
+    // core prepares those statements on its async connections only, so the transaction goes
+    // through the async pool (DirectCommitTransaction runs on a sync connection, where they
+    // don't exist, and asserts), and the command waits for it.
+    static void CommitStoredItemChanges(Player* player, CharacterDatabaseTransaction trans)
     {
-        if (trans->GetSize())
-            CharacterDatabase.DirectCommitTransaction(trans);
+        if (!trans->GetSize())
+            return;
+
+        player->SaveInventoryAndGoldToDB(trans);
+        if (!CharacterDatabase.AsyncCommitTransaction(trans).m_future.get())
+            LOG_ERROR("module", "ReagentBankAccount: bank and bag save failed for player {}.", player->GetGUID().ToString());
     }
 
-    static void SaveStoredItems(Player const* player, std::map<uint32, StoredItem> const& previousItems, std::map<uint32, StoredItem> const& changedItems)
+    static void SaveStoredItems(Player* player, std::map<uint32, StoredItem> const& previousItems, std::map<uint32, StoredItem> const& changedItems)
     {
         if (changedItems.empty())
             return;
@@ -1128,7 +1151,7 @@ namespace ReagentBank
             AppendStoredItemChange(trans, player, pair.second, previous != previousItems.end() ? previous->second.Amount : 0);
         }
 
-        CommitStoredItemChanges(trans);
+        CommitStoredItemChanges(player, trans);
     }
 
     static void QueryCategoryTotals(Player const* player, uint32 category, uint32& typeCount, uint64& totalAmount)
@@ -1275,8 +1298,9 @@ namespace ReagentBank
 
     static uint32 DepositFromSlot(Player* player, uint8 bagSlot, uint8 itemSlot, uint32 onlyCategory, std::map<uint32, StoredItem>& storedItems, ItemAmountMap& deposited, bool& overflowed)
     {
+        // A stack offered in a trade window still goes to the trade partner.
         Item* item = player->GetItemByPos(bagSlot, itemSlot);
-        if (!item)
+        if (!item || item->IsInTrade())
             return 0;
 
         uint32 itemEntry = 0;
@@ -1378,8 +1402,9 @@ namespace ReagentBank
 
     static uint32 PreviewDepositFromSlot(Player* player, uint8 bagSlot, uint8 itemSlot, uint32 onlyCategory, std::map<uint32, StoredItem>& simulatedStoredItems, ItemAmountMap& previewItems, bool& overflowed)
     {
+        // A stack offered in a trade window still goes to the trade partner.
         Item* item = player->GetItemByPos(bagSlot, itemSlot);
-        if (!item)
+        if (!item || item->IsInTrade())
             return 0;
 
         uint32 itemEntry = 0;
@@ -1464,6 +1489,28 @@ namespace ReagentBank
         return totalPreviewed;
     }
 
+    // Calls fn for each stack of itemEntry in the backpack and equipped bags (never the bank,
+    // keyring or equipment) that is not in a trade window, until fn returns false.
+    template <typename Fn>
+    static void ForEachBagStack(Player* player, uint32 itemEntry, Fn&& fn)
+    {
+        auto const visit = [&](uint8 bagSlot, uint8 slot)
+            {
+                Item* item = player->GetItemByPos(bagSlot, slot);
+                return !item || item->GetEntry() != itemEntry || item->IsInTrade() || fn(item);
+            };
+
+        for (uint8 slot = INVENTORY_SLOT_ITEM_START; slot < INVENTORY_SLOT_ITEM_END; ++slot)
+            if (!visit(INVENTORY_SLOT_BAG_0, slot))
+                return;
+
+        for (uint8 bagSlot = INVENTORY_SLOT_BAG_START; bagSlot < INVENTORY_SLOT_BAG_END; ++bagSlot)
+            if (Bag* bag = player->GetBagByPos(bagSlot))
+                for (uint32 slot = 0; slot < bag->GetBagSize(); ++slot)
+                    if (!visit(bagSlot, uint8(slot)))
+                        return;
+    }
+
     static uint32 DepositSpecificItems(Player* player, std::vector<std::pair<uint32, uint32>> const& requestedItems, ItemAmountMap& deposited, bool& overflowed)
     {
         deposited.clear();
@@ -1495,7 +1542,16 @@ namespace ReagentBank
             if (IsDepositExcluded(itemEntry) || IsNeededByActiveQuest(player, itemEntry))
                 continue;
 
-            uint32 const availableInBags = player->GetItemCount(itemEntry, false);
+            // GetItemCount would also count stacks in a trade window, which DestroyItemCount
+            // then skips (taking character bank stacks instead), so count and take the same
+            // stacks here.
+            uint32 availableInBags = 0;
+            ForEachBagStack(player, itemEntry, [&](Item* item)
+                {
+                    availableInBags += item->GetCount();
+                    return true;
+                });
+
             uint32 const amountToDeposit = std::min<uint32>(requestedAmount, availableInBags);
             if (!amountToDeposit)
                 continue;
@@ -1513,12 +1569,22 @@ namespace ReagentBank
                 continue;
             }
 
-            // Match the existing deposit behavior: remove bag items, then persist the virtual balance.
-            player->DestroyItemCount(itemEntry, amountToDeposit, true);
-            stored.Amount = updatedStoredAmount;
+            // Remove the bag items, then credit what actually left the bags.
+            uint32 remaining = amountToDeposit;
+            ForEachBagStack(player, itemEntry, [&](Item* item)
+                {
+                    player->DestroyItemCount(item, remaining, true);
+                    return remaining > 0;
+                });
+
+            uint32 const taken = amountToDeposit - remaining;
+            stored.Amount += taken;
+            deposited[itemEntry] -= remaining;
+            if (!deposited[itemEntry])
+                deposited.erase(itemEntry);
 
             uint32 updatedTotal = 0;
-            if (AddAmountChecked(totalDeposited, amountToDeposit, updatedTotal))
+            if (AddAmountChecked(totalDeposited, taken, updatedTotal))
                 totalDeposited = updatedTotal;
             else
             {
@@ -1715,7 +1781,7 @@ namespace ReagentBank
 
         auto trans = CharacterDatabase.BeginTransaction();
         uint32 const total = WithdrawExact(player, stored, requested, stoppedForBagSpace, withdrawn, trans);
-        CommitStoredItemChanges(trans);
+        CommitStoredItemChanges(player, trans);
         return total;
     }
 
@@ -1737,7 +1803,7 @@ namespace ReagentBank
     {
         auto trans = CharacterDatabase.BeginTransaction();
         uint32 const total = WithdrawItemAmount(player, itemEntry, requestedAmount, stoppedForBagSpace, withdrawn, trans);
-        CommitStoredItemChanges(trans);
+        CommitStoredItemChanges(player, trans);
         return total;
     }
 
@@ -1779,7 +1845,7 @@ namespace ReagentBank
             }
         }
 
-        CommitStoredItemChanges(trans);
+        CommitStoredItemChanges(player, trans);
         return totalWithdrawn;
     }
 
@@ -1836,7 +1902,7 @@ namespace ReagentBank
     {
         auto trans = CharacterDatabase.BeginTransaction();
         uint32 const total = WithdrawCategory(player, category, stoppedForBagSpace, withdrawn, trans);
-        CommitStoredItemChanges(trans);
+        CommitStoredItemChanges(player, trans);
         return total;
     }
 
@@ -1864,7 +1930,7 @@ namespace ReagentBank
             }
         }
 
-        CommitStoredItemChanges(trans);
+        CommitStoredItemChanges(player, trans);
         return totalWithdrawn;
     }
 
@@ -2436,6 +2502,13 @@ private:
             if (tokens.size() < 2)
             {
                 ReagentBank::SendUsage(handler);
+                return true;
+            }
+
+            // The core hands traded items over at accept time, whatever happened to them since.
+            if (player->GetTradeData())
+            {
+                ReagentBank::SendError(handler, "Finish or cancel the trade before depositing reagents.");
                 return true;
             }
 
