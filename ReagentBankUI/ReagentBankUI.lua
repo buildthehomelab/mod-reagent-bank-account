@@ -1542,6 +1542,12 @@ function RB:RunAutoDepositTicker(now)
         return
     end
 
+    -- The server refuses deposits while a trade is open.
+    if TradeFrame and TradeFrame:IsShown() then
+        self.nextAutoDepositTickerAt = now + AUTO_DEPOSIT_TICKER_RETRY_DELAY
+        return
+    end
+
     self.nextAutoDepositTickerAt = now + seconds
     self.autoDepositQuietUntil = now + REQUEST_TIMEOUT_SECONDS
     self.autoDepositSuppressViewUntil = now + REQUEST_TIMEOUT_SECONDS

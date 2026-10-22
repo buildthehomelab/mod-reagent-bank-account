@@ -31,8 +31,9 @@ This module adds a server-backed reagent bank for trade goods, gems, and craftin
 - Anything that stacks and comes from skinning loot, whatever its item class (Shadowcat Hide, Thick Wolfhide, Frostsaber Leather). Herb-, ore- and engineer-gathered creature loot goes under Herb, Metal & Stone and Parts; everything else goes under Leather. Left out: food, grey vendor trash, soulbound or quest-bound items (the bank is account-wide), and objectives of one-time quests. Repeatable turn-ins such as Unidentified Plant Parts are bankable
 - Anything listed in the world table `mod_reagent_bank_account_deposit_inclusions_zz_custom` (`item_entry`, `item_subclass` = bank category). It ships with Dark Iron Residue and Ironfeather
 - Items listed in `mod_reagent_bank_account_deposit_exclusions_zz_custom` are never deposited
+- Soulbound and quest-bound items stay in your bags, since the bank can be shared between characters, unless the inclusions table lists them (the archaeology keystones are soulbound). Conjured and timed items always stay in your bags
 
-Deposits skip any item a quest in your log asks for, so auto-deposit cannot take quest items before you turn them in.
+Deposits skip any item a quest in your log asks for, so auto-deposit cannot take quest items before you turn them in. Deposits are refused while a trade window is open, and periodic auto-deposit waits until the trade is closed.
 
 ---
 
