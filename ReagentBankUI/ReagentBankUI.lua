@@ -1512,7 +1512,8 @@ end
 function RB:RunAutoDepositTicker(now)
     local seconds = self:GetAutoDepositTickerSeconds()
 
-    if seconds <= 0 then
+    -- The server turned this character away for the session (a Self-Found challenge).
+    if seconds <= 0 or self.autoDepositRefused then
         self.nextAutoDepositTickerAt = nil
         return
     end
@@ -6822,6 +6823,13 @@ function RB:HandleError(errText)
     if self:IsAutoDepositQuietActive() then
         self.autoDepositQuietUntil = nil
         self.autoDepositSuppressViewUntil = nil
+        -- A Self-Found character may never use the bank: stop asking until the next login.
+        if string.sub(errText, 1, 10) == "Self-Found" then
+            self.autoDepositRefused = true
+            self.nextAutoDepositTickerAt = nil
+            PrintAddon("periodic auto-deposit is off for this character: " .. errText)
+            return
+        end
         PrintAddon("periodic auto-deposit skipped: " .. errText)
         return
     end

@@ -60,6 +60,9 @@
 #include "SpellMgr.h"
 #include "StringFormat.h"
 #include "WorldSession.h"
+#if __has_include("ChallengesApi.h")
+#include "ChallengesApi.h"
+#endif
 
 #include <algorithm>
 #include <array>
@@ -2401,6 +2404,18 @@ private:
             return true;
         }
 
+
+#if __has_include("ChallengesApi.h")
+        // mod-challenges: a Self-Found character keeps its reagents to itself. It can't take the
+        // account's stock, and what it puts in would go to its alts. The ReagentBankUI addon stops
+        // its auto-deposit timer when it sees this message (it starts with "Self-Found").
+        if ((command == "preview" || command == "deposit" || command == "withdraw") &&
+            Challenges::IsSelfFound(player->GetGUID().GetCounter()))
+        {
+            ReagentBank::SendError(handler, "Self-Found characters can't use the account bank.");
+            return true;
+        }
+#endif
 
         if (command == "preview")
         {
