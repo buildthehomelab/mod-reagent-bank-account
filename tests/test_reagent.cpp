@@ -40,12 +40,14 @@ using CharacterDatabaseTransaction = std::shared_ptr<Transaction>;
 struct Database {
     std::atomic<unsigned> commits{0};
     CharacterDatabaseTransaction last;
+    std::vector<Statement> submitted;
     bool success = true;
     std::shared_ptr<std::promise<bool>> pending;
     CharacterDatabaseTransaction BeginTransaction() { return std::make_shared<Transaction>(); }
     struct Result { std::future<bool> m_future; };
     Result AsyncCommitTransaction(CharacterDatabaseTransaction trans) {
         last = trans;
+        submitted = trans->statements;
         ++commits;
         if (pending) return {pending->get_future()};
         std::promise<bool> promise; promise.set_value(success); return {promise.get_future()};
@@ -97,7 +99,7 @@ static bool LoadStoredItem(Player const*, uint32, StoredItem& out) { out = bank;
 static void reset() {
     storable=true; excluded=false; quest=false; objectMgr = {}; bank = {1, 7, 55}; loadMissing = false;
     g_accountWideReagentBank = false; g_shareOwnerByKey.clear();
-    CharacterDatabase.last.reset(); CharacterDatabase.commits = 0;
+    CharacterDatabase.last.reset(); CharacterDatabase.submitted.clear(); CharacterDatabase.commits = 0;
     CharacterDatabase.pending.reset(); CharacterDatabase.success = true; errors = 0;
 }
 static void arithmetic() {
@@ -206,7 +208,8 @@ static void commits() {
     CommitStoredItemChanges(&player,trans); CHECK(player.saves==0 && CharacterDatabase.commits==0);
     trans->Append("bank",1); CommitStoredItemChanges(&player,trans);
     CHECK(player.saves==1 && CharacterDatabase.commits==1 && CharacterDatabase.last==trans);
-    CHECK(trans->statements.at(0).sql=="bank" && trans->statements.at(1).sql=="inventory");
+    CHECK(CharacterDatabase.submitted.size()==2);
+    CHECK(CharacterDatabase.submitted.at(0).sql=="bank" && CharacterDatabase.submitted.at(1).sql=="inventory");
     CharacterDatabase.success=false; CommitStoredItemChanges(&player,trans); CHECK(errors==1);
     // A real promise/future verifies waiting, rather than a fake immediate .get().
     reset(); trans=CharacterDatabase.BeginTransaction(); trans->Append("bank",1);
@@ -215,6 +218,7 @@ static void commits() {
     auto deadline=std::chrono::steady_clock::now()+std::chrono::seconds(2);
     while (CharacterDatabase.commits==0 && std::chrono::steady_clock::now()<deadline) std::this_thread::yield();
     CHECK(CharacterDatabase.commits==1);
+    CHECK(CharacterDatabase.submitted.size()==2 && CharacterDatabase.submitted.back().sql=="inventory");
     CHECK(task.wait_for(std::chrono::milliseconds(25))==std::future_status::timeout);
     CharacterDatabase.pending->set_value(true);
     CHECK(task.wait_for(std::chrono::seconds(2))==std::future_status::ready); task.get();
@@ -225,7 +229,7 @@ static void commits() {
         CHECK(WithdrawItem(&p,1,mode,full,amounts)==expected);
         CHECK(p.bags==expected && !full && SumItemAmountMap(amounts)==expected);
         CHECK(p.saves==1 && CharacterDatabase.commits==1);
-        CHECK(CharacterDatabase.last->statements.back().sql=="inventory");
+        CHECK(CharacterDatabase.submitted.size()==3 && CharacterDatabase.submitted.back().sql=="inventory");
     }
     reset(); loadMissing=true; Player p; ItemAmountMap amounts; bool full=true;
     CHECK(WithdrawItem(&p,1,WithdrawMode::All,full,amounts)==0 && !full && p.saves==0);
