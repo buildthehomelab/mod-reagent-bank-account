@@ -2,7 +2,7 @@
 
 Run `python3 tests/run.py` with a C++20 compiler. `CXX`, `CXXFLAGS` and
 `BUILD_DIR` select compiler, instrumentation and output directory. Sanitizer
-reports are fatal. `python3 tests/mutations.py` requires all 23 representative
+reports are fatal. `python3 tests/mutations.py` requires all 24 representative
 production mutants to compile and fail a behavioral assertion; compiler errors,
 crashes and timeouts do not count as successful detections.
 
@@ -26,7 +26,8 @@ Covered behaviors:
 - Account/character key isolation, share-owner remapping and map removal.
 - Relative addition/debit SQL text and arguments, saturation expression and
   zero-row cleanup, and no writes for unchanged amounts.
-- Inventory save and bank statements use the same transaction; empty transactions
+- Inventory save and bank statements use the same transaction, verified from a
+  statement snapshot captured at commit submission; empty transactions
   do nothing; commit failure is logged. A real promise/future holds the commit
   incomplete and proves the function waits before returning.
 
