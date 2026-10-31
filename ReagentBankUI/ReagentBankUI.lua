@@ -155,179 +155,20 @@ local SHOPPING_RECIPE_BUTTON_WIDTH = 132
 local SHOPPING_PRINT_BUTTON_WIDTH = 96
 local SHOPPING_CLEAR_BUTTON_WIDTH = 96
 
--- PaperDoll toggle button placement/style.
--- Uses the same round minimap-style art as the PaperDollAHButton example.
--- Primary position: immediately to the right of PaperDollAHButton.
--- Fallback position is used if PaperDollAHButton is not loaded yet.
-local PAPERDOLL_BUTTON_ENABLED = true
-local PAPERDOLL_BUTTON_PARENT = "PaperDollFrame"
-local PAPERDOLL_ANCHOR_BUTTON_NAME = "PaperDollAHButton"
-local PAPERDOLL_BUTTON_GAP = 2
+-- Bag window launcher button. It joins the header row of whichever backpack
+-- window is open: DragonUI's combined bags (left of its sell/clear/sort
+-- buttons), the plain backpack with DragonUI's sort row, or the stock
+-- backpack's title bar.
+local BAG_BUTTON_ICON = "Interface\\Icons\\INV_Misc_Bag_10"
+local BAG_BUTTON_SIZE = 22
+local BAGSTER_HEADER_GAP = 4
+local VANILLA_HEADER_GAP = 3
 
--- Fallback: this matches the AH button's sample position and places this button
--- directly to the right of it: AH TOPRIGHT is -324, -474; this TOPLEFT is -322, -474.
-local PAPERDOLL_BUTTON_FALLBACK_POINT = "TOPLEFT"
-local PAPERDOLL_BUTTON_FALLBACK_RELATIVE_POINT = "TOPRIGHT"
-local PAPERDOLL_BUTTON_FALLBACK_X = -322
-local PAPERDOLL_BUTTON_FALLBACK_Y = -474
-
-local PAPERDOLL_BUTTON_SIZE = 32
-local PAPERDOLL_BUTTON_ICON = "Interface\\Icons\\INV_Misc_Bag_10"
-local PAPERDOLL_BUTTON_ICON_SIZE = 17
-local PAPERDOLL_BUTTON_ICON_CROP = 0.08
-
-local PAPERDOLL_BUTTON_BG_TEXTURE = "Interface\\Minimap\\MiniMap-TrackingBackground"
-local PAPERDOLL_BUTTON_BG_SIZE = 20
-local PAPERDOLL_BUTTON_BG_R = 0.15
-local PAPERDOLL_BUTTON_BG_G = 0.15
-local PAPERDOLL_BUTTON_BG_B = 0.15
-local PAPERDOLL_BUTTON_BG_A = 0.95
-
-local PAPERDOLL_BUTTON_BORDER_TEXTURE = "Interface\\Minimap\\MiniMap-TrackingBorder"
-local PAPERDOLL_BUTTON_BORDER_SIZE = 54
-
-local PAPERDOLL_BUTTON_HIGHLIGHT_TEXTURE = "Interface\\Minimap\\UI-Minimap-ZoomButton-Highlight"
-local PAPERDOLL_BUTTON_HIGHLIGHT_SIZE = 52
-
-local PAPERDOLL_LAUNCHER_DOCK_VERSION = 20260518
-
-local function EnsurePaperDollLauncherDock()
-    local dock = _G.PaperDollLauncherDock
-    if type(dock) ~= "table" then
-        dock = {}
-        _G.PaperDollLauncherDock = dock
-    end
-
-    dock.entries = dock.entries or {}
-
-    if (tonumber(dock.version) or 0) >= PAPERDOLL_LAUNCHER_DOCK_VERSION and dock.Register and dock.Layout then
-        return dock
-    end
-
-    dock.version = PAPERDOLL_LAUNCHER_DOCK_VERSION
-    dock.startPoint = "TOPRIGHT"
-    dock.startRelativePoint = "TOPRIGHT"
-    dock.startX = -324
-    dock.startY = -464
-    dock.gap = 2
-
-    function dock:GetParentFrame()
-        return _G.PaperDollFrame or _G.CharacterFrame or UIParent
-    end
-
-    function dock:InstallHooks()
-        self.hookedParents = self.hookedParents or {}
-
-        local candidates = { _G.PaperDollFrame, _G.CharacterFrame }
-        for _, parent in ipairs(candidates) do
-            if parent and parent.HookScript and not self.hookedParents[parent] then
-                parent:HookScript("OnShow", function()
-                    if _G.PaperDollLauncherDock and _G.PaperDollLauncherDock.Layout then
-                        _G.PaperDollLauncherDock:Layout()
-                    end
-                end)
-                self.hookedParents[parent] = true
-            end
-        end
-
-        if not self.eventFrame then
-            self.eventFrame = CreateFrame("Frame")
-            self.eventFrame:RegisterEvent("PLAYER_LOGIN")
-            self.eventFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
-            self.eventFrame:RegisterEvent("ADDON_LOADED")
-            self.eventFrame:SetScript("OnEvent", function()
-                if _G.PaperDollLauncherDock and _G.PaperDollLauncherDock.Layout then
-                    _G.PaperDollLauncherDock:Layout()
-                end
-            end)
-        end
-    end
-
-    function dock:Register(id, button, order)
-        if not id or not button then
-            return
-        end
-
-        self.entries = self.entries or {}
-        self.entries[id] = self.entries[id] or {}
-        self.entries[id].button = button
-        self.entries[id].order = tonumber(order) or 1000
-
-        button.PaperDollLauncherDockID = id
-
-        self:InstallHooks()
-        self:Layout()
-    end
-
-    function dock:Unregister(id)
-        if self.entries then
-            self.entries[id] = nil
-        end
-
-        self:Layout()
-    end
-
-    function dock:Layout()
-        self:InstallHooks()
-
-        local parent = self:GetParentFrame()
-        local buttons = {}
-
-        for id, entry in pairs(self.entries or {}) do
-            if entry and entry.button then
-                table.insert(buttons, {
-                    id = id,
-                    button = entry.button,
-                    order = tonumber(entry.order) or 1000,
-                })
-            end
-        end
-
-        table.sort(buttons, function(a, b)
-            if a.order == b.order then
-                return tostring(a.id) < tostring(b.id)
-            end
-
-            return a.order < b.order
-        end)
-
-        local previousButton = nil
-
-        for _, entry in ipairs(buttons) do
-            local button = entry.button
-
-            if button.SetParent and button:GetParent() ~= parent then
-                button:SetParent(parent)
-            end
-
-            if button.SetMovable then
-                button:SetMovable(false)
-            end
-
-            if button.SetClampedToScreen then
-                button:SetClampedToScreen(false)
-            end
-
-            if button.SetFrameLevel and parent and parent.GetFrameLevel then
-                button:SetFrameLevel((parent:GetFrameLevel() or 1) + 12)
-            end
-
-            button:ClearAllPoints()
-
-            if previousButton then
-                button:SetPoint("LEFT", previousButton, "RIGHT", self.gap, 0)
-            else
-                button:SetPoint(self.startPoint, parent, self.startRelativePoint, self.startX, self.startY)
-            end
-
-            button:Show()
-            previousButton = button
-        end
-    end
-
-    dock:InstallHooks()
-    return dock
-end
+-- DragonUI's own header buttons, rightmost last. Ours goes left of the first
+-- one shown.
+local BAGSTER_FRAME_NAME = "DragonUI_BagsterFrame1"
+local BAGSTER_HEADER_BUTTONS = { "DragonUI_BagsterBagSellScrapBtn", "DragonUI_BagsterBagClearBtn", "DragonUI_BagsterBagSortBtn" }
+local VANILLA_HEADER_BUTTONS = { "DragonUI_VanillaBagSellScrapBtn", "DragonUI_VanillaBagClearBtn", "DragonUI_VanillaBagSortBtn" }
 
 local function Trim(text)
     if not text then
@@ -5026,15 +4867,6 @@ function RB:Toggle()
     self:RequestRoot()
 end
 
-function RB:PositionPaperDollButton()
-    if not self.paperDollButton then
-        return
-    end
-
-    local dock = EnsurePaperDollLauncherDock()
-    dock:Register("ReagentBankUI", self.paperDollButton, 20)
-end
-
 -- Settings live in the standard Interface Options window, under AddOns.
 function RB:CreateSettingsPanel()
     if self.settingsPanel then
@@ -5175,81 +5007,167 @@ function RB:ResetWindowPosition()
     end
     self:Status("Window position and scale reset.", 0.82, 0.82, 0.82)
 end
-function RB:CreatePaperDollButton()
-    if self.paperDollButton or not PAPERDOLL_BUTTON_ENABLED then
+local function FirstShown(names)
+    for _, name in ipairs(names) do
+        local button = _G[name]
+        if button and button:IsShown() then
+            return button
+        end
+    end
+end
+
+-- The backpack can open in any ContainerFrame, so find the one showing bag 0.
+local function GetOpenBackpackFrame()
+    for i = 1, NUM_CONTAINER_FRAMES or 0 do
+        local frame = _G["ContainerFrame" .. i]
+        if frame and frame:IsShown() and frame:GetID() == 0 then
+            return frame
+        end
+    end
+end
+
+-- DragonUI's combined bags use its Dragonflight action-button frame; the
+-- plain backpack keeps the stock quickslot border, like DragonUI's own row.
+function RB:SetBagButtonChrome(dragon)
+    local button = self.bagButton
+    local D = _G.DragonUI
+    dragon = dragon and D and D._dir and true or false
+
+    local size = button:GetWidth()
+    button.border:ClearAllPoints()
+    button.highlight:ClearAllPoints()
+
+    if dragon then
+        button.border:SetTexture(D._dir .. "ActionBars\\uiactionbariconframe")
+        button.border:SetPoint("TOPRIGHT", button, "TOPRIGHT", 2.2, 2.3)
+        button.border:SetPoint("BOTTOMLEFT", button, "BOTTOMLEFT", -2.2, -2.2)
+        button.highlight:SetTexture(D._dir .. "ActionBars\\uiactionbariconframehighlight")
+        button.highlight:SetAllPoints(button.border)
+    else
+        button.border:SetTexture("Interface\\Buttons\\UI-Quickslot2")
+        button.border:SetWidth(size * 62 / 36)
+        button.border:SetHeight(size * 62 / 36)
+        button.border:SetPoint("CENTER", button, "CENTER", 0, 0)
+        button.highlight:SetTexture("Interface\\Buttons\\ButtonHilight-Square")
+        button.highlight:SetAllPoints(button)
+    end
+end
+
+function RB:PositionBagButton()
+    local button = self.bagButton
+    if not button then
         return
     end
 
-    local dock = EnsurePaperDollLauncherDock()
-    local parent = dock:GetParentFrame()
+    local host, anchor, gap, dragon
+    local bagster = _G[BAGSTER_FRAME_NAME]
 
-    local button = CreateFrame("Button", "ReagentBankUIPaperDollButton", parent)
-    button:SetWidth(PAPERDOLL_BUTTON_SIZE)
-    button:SetHeight(PAPERDOLL_BUTTON_SIZE)
-    button:RegisterForClicks("LeftButtonUp", "RightButtonUp")
-    button:SetFrameLevel((parent:GetFrameLevel() or 1) + 12)
+    if bagster and bagster:IsShown() then
+        host = bagster
+        anchor = FirstShown(BAGSTER_HEADER_BUTTONS)
+        gap = BAGSTER_HEADER_GAP
+        dragon = true
 
-    -- Dark circular background, matching the AH button style.
-    local bg = button:CreateTexture(nil, "BACKGROUND")
-    bg:SetTexture(PAPERDOLL_BUTTON_BG_TEXTURE)
-    bg:SetWidth(PAPERDOLL_BUTTON_BG_SIZE)
-    bg:SetHeight(PAPERDOLL_BUTTON_BG_SIZE)
-    bg:SetPoint("CENTER", button, "CENTER", 0, 0)
-    bg:SetVertexColor(
-        PAPERDOLL_BUTTON_BG_R,
-        PAPERDOLL_BUTTON_BG_G,
-        PAPERDOLL_BUTTON_BG_B,
-        PAPERDOLL_BUTTON_BG_A
-    )
-    button.bg = bg
-
-    -- Inner icon.
-    local icon = button:CreateTexture(nil, "ARTWORK")
-    icon:SetTexture(PAPERDOLL_BUTTON_ICON)
-    icon:SetWidth(PAPERDOLL_BUTTON_ICON_SIZE)
-    icon:SetHeight(PAPERDOLL_BUTTON_ICON_SIZE)
-    icon:SetPoint("CENTER", button, "CENTER", 0, 0)
-    icon:SetTexCoord(
-        PAPERDOLL_BUTTON_ICON_CROP,
-        1 - PAPERDOLL_BUTTON_ICON_CROP,
-        PAPERDOLL_BUTTON_ICON_CROP,
-        1 - PAPERDOLL_BUTTON_ICON_CROP
-    )
-    button.icon = icon
-
-    -- Circular border ring.
-    local border = button:CreateTexture(nil, "OVERLAY")
-    border:SetTexture(PAPERDOLL_BUTTON_BORDER_TEXTURE)
-    border:SetWidth(PAPERDOLL_BUTTON_BORDER_SIZE)
-    border:SetHeight(PAPERDOLL_BUTTON_BORDER_SIZE)
-    border:SetPoint("TOPLEFT", button, "TOPLEFT", 0, 0)
-    button.border = border
-
-    -- Mouseover glow.
-    button:SetHighlightTexture(PAPERDOLL_BUTTON_HIGHLIGHT_TEXTURE)
-    local highlight = button:GetHighlightTexture()
-    if highlight then
-        highlight:SetBlendMode("ADD")
-        highlight:SetWidth(PAPERDOLL_BUTTON_HIGHLIGHT_SIZE)
-        highlight:SetHeight(PAPERDOLL_BUTTON_HIGHLIGHT_SIZE)
-        highlight:ClearAllPoints()
-        highlight:SetPoint("CENTER", button, "CENTER", 0, 0)
+        -- DragonUI sizes the search box to a full header row, so it gives up
+        -- our button's width once.
+        local search = _G[BAGSTER_FRAME_NAME .. "Search"]
+        if anchor and search and not search.ReagentBankUINarrowed then
+            search:SetWidth(search:GetWidth() - BAG_BUTTON_SIZE - gap)
+            search.ReagentBankUINarrowed = true
+        end
+    else
+        host = GetOpenBackpackFrame()
+        if host then
+            anchor = FirstShown(VANILLA_HEADER_BUTTONS)
+            gap = VANILLA_HEADER_GAP
+            if anchor and anchor:GetParent() ~= host then
+                anchor = nil
+            end
+        end
     end
 
-    button:SetScript("OnMouseDown", function(selfButton)
-        selfButton.bg:ClearAllPoints()
-        selfButton.bg:SetPoint("CENTER", selfButton, "CENTER", 1, -1)
+    if not host then
+        return
+    end
 
-        selfButton.icon:ClearAllPoints()
-        selfButton.icon:SetPoint("CENTER", selfButton, "CENTER", 1, -1)
+    if button:GetParent() ~= host then
+        button:SetParent(host)
+    end
+    button:SetFrameLevel((host:GetFrameLevel() or 1) + 10)
+
+    local size = anchor and math.floor(anchor:GetWidth() + 0.5) or BAG_BUTTON_SIZE
+    button:SetWidth(size)
+    button:SetHeight(size)
+    self:SetBagButtonChrome(dragon)
+
+    button:ClearAllPoints()
+    if anchor then
+        button:SetPoint("RIGHT", anchor, "LEFT", -gap, 0)
+    else
+        -- Stock backpack: in the title bar, left of the close button.
+        local close = _G[host:GetName() .. "CloseButton"]
+        if close then
+            button:SetPoint("RIGHT", close, "LEFT", 4, 0)
+        else
+            button:SetPoint("TOPRIGHT", host, "TOPRIGHT", -32, -8)
+        end
+    end
+    button:Show()
+end
+
+-- DragonUI lays out its own header buttons when the window opens, so the
+-- button is placed again on the next frame as well.
+function RB:QueueBagButtonPosition()
+    self:PositionBagButton()
+    self.bagButtonDriver.queued = true
+    self.bagButtonDriver:Show()
+end
+
+function RB:HookBagsterFrame()
+    local bagster = _G[BAGSTER_FRAME_NAME]
+    if not bagster or bagster.ReagentBankUIHooked then
+        return bagster ~= nil
+    end
+
+    bagster:HookScript("OnShow", function()
+        RB:QueueBagButtonPosition()
+    end)
+    bagster.ReagentBankUIHooked = true
+    if bagster:IsShown() then
+        self:QueueBagButtonPosition()
+    end
+    return true
+end
+
+function RB:CreateBagButton()
+    if self.bagButton then
+        return
+    end
+
+    local button = CreateFrame("Button", "ReagentBankUIBagButton", UIParent)
+    button:SetWidth(BAG_BUTTON_SIZE)
+    button:SetHeight(BAG_BUTTON_SIZE)
+    button:RegisterForClicks("LeftButtonUp", "RightButtonUp")
+    button:Hide()
+
+    local icon = button:CreateTexture(nil, "ARTWORK")
+    icon:SetAllPoints()
+    icon:SetTexture(BAG_BUTTON_ICON)
+    icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+    button.icon = icon
+
+    button.border = button:CreateTexture(nil, "OVERLAY")
+
+    local highlight = button:CreateTexture(nil, "HIGHLIGHT")
+    highlight:SetBlendMode("ADD")
+    button.highlight = highlight
+
+    button:SetScript("OnMouseDown", function(selfButton)
+        selfButton.icon:SetTexCoord(0.12, 0.88, 0.12, 0.88)
     end)
 
     button:SetScript("OnMouseUp", function(selfButton)
-        selfButton.bg:ClearAllPoints()
-        selfButton.bg:SetPoint("CENTER", selfButton, "CENTER", 0, 0)
-
-        selfButton.icon:ClearAllPoints()
-        selfButton.icon:SetPoint("CENTER", selfButton, "CENTER", 0, 0)
+        selfButton.icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
     end)
 
     button:SetScript("OnClick", function(selfButton, mouseButton)
@@ -5279,36 +5197,45 @@ function RB:CreatePaperDollButton()
 
     button:SetScript("OnLeave", HideTooltip)
 
-    self.paperDollButton = button
-    self:PositionPaperDollButton()
+    self.bagButton = button
+    self:SetBagButtonChrome(false)
 
-    -- If the AH button addon loads after this addon, retry for a few seconds
-    -- and then snap to the right of PaperDollAHButton as soon as it exists.
-    button.positionElapsed = 0
-    button.positionAttempts = 0
-    button:SetScript("OnUpdate", function(selfButton, elapsed)
-        selfButton.positionElapsed = (selfButton.positionElapsed or 0) + elapsed
-        if selfButton.positionElapsed < 0.25 then
-            return
+    for i = 1, NUM_CONTAINER_FRAMES or 0 do
+        local frame = _G["ContainerFrame" .. i]
+        if frame then
+            frame:HookScript("OnShow", function()
+                RB:QueueBagButtonPosition()
+            end)
+        end
+    end
+
+    -- Runs only while shown: one deferred placement after a window opens, and
+    -- until DragonUI has built its combined bag window (or 30 s have passed).
+    local driver = CreateFrame("Frame")
+    driver.elapsed = 0
+    driver.waited = 0
+    driver:SetScript("OnUpdate", function(selfDriver, elapsed)
+        if selfDriver.queued then
+            selfDriver.queued = nil
+            RB:PositionBagButton()
         end
 
-        selfButton.positionElapsed = 0
-        selfButton.positionAttempts = (selfButton.positionAttempts or 0) + 1
+        if not selfDriver.bagsterDone then
+            selfDriver.elapsed = selfDriver.elapsed + elapsed
+            selfDriver.waited = selfDriver.waited + elapsed
+            if selfDriver.elapsed >= 0.5 then
+                selfDriver.elapsed = 0
+                if RB:HookBagsterFrame() or selfDriver.waited >= 30 then
+                    selfDriver.bagsterDone = true
+                end
+            end
+        end
 
-        RB:PositionPaperDollButton()
-
-        if _G[PAPERDOLL_ANCHOR_BUTTON_NAME] or selfButton.positionAttempts >= 40 then
-            selfButton:SetScript("OnUpdate", nil)
+        if selfDriver.bagsterDone and not selfDriver.queued then
+            selfDriver:Hide()
         end
     end)
-
-    if parent.HookScript and not parent.ReagentBankUIPositionHooked then
-        parent:HookScript("OnShow", function()
-            RB:CreatePaperDollButton()
-            RB:PositionPaperDollButton()
-        end)
-        parent.ReagentBankUIPositionHooked = true
-    end
+    self.bagButtonDriver = driver
 end
 
 function RB:ApplyScale()
@@ -7438,7 +7365,7 @@ RB:SetScript("OnEvent", function(self, event, ...)
             ReagentBankUIDB.lowStockCrafts = self:ClampTradeSkillPrepareCount(ReagentBankUIDB.lowStockCrafts or LOW_STOCK_DEFAULT_CRAFTS)
             self:ApplySavedPosition()
             self:ApplyScale()
-            self:CreatePaperDollButton()
+            self:CreateBagButton()
             self:HookTradeSkillSelection()
             self:FixAuctionatorShoppingListOptions()
         elseif addonName == "Blizzard_TradeSkillUI" then
@@ -7449,7 +7376,7 @@ RB:SetScript("OnEvent", function(self, event, ...)
     elseif event == "PLAYER_LOGIN" then
         self:NormalizeShoppingList()
         self:RestartAutoDepositTicker()
-        self:CreatePaperDollButton()
+        self:CreateBagButton()
         self:CreateSettingsPanel()
         self:FixAuctionatorShoppingListOptions()
     elseif event == "TRADE_SKILL_SHOW" then
