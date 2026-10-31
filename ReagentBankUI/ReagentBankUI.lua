@@ -157,8 +157,8 @@ local SHOPPING_CLEAR_BUTTON_WIDTH = 96
 
 -- Bag window launcher button. It joins the header row of whichever backpack
 -- window is open: DragonUI's combined bags (left of its sell/clear/sort
--- buttons), the plain backpack with DragonUI's sort row, or the stock
--- backpack's title bar.
+-- buttons), the plain backpack with DragonUI's sort row, the stock
+-- backpack's title bar, or another bag addon's inventory window.
 local BAG_BUTTON_ICON = "Interface\\Icons\\INV_Misc_Bag_10"
 local BAG_BUTTON_SIZE = 22
 local BAGSTER_HEADER_GAP = 4
@@ -169,6 +169,31 @@ local VANILLA_HEADER_GAP = 3
 local BAGSTER_FRAME_NAME = "DragonUI_BagsterFrame1"
 local BAGSTER_HEADER_BUTTONS = { "DragonUI_BagsterBagSellScrapBtn", "DragonUI_BagsterBagClearBtn", "DragonUI_BagsterBagSortBtn" }
 local VANILLA_HEADER_BUTTONS = { "DragonUI_VanillaBagSellScrapBtn", "DragonUI_VanillaBagClearBtn", "DragonUI_VanillaBagSortBtn" }
+
+-- Bagnon's inventory window (names differ by Bagnon version). The button sits
+-- in its title bar where DragonUI puts its clear button, or left of that one.
+local BAGNON_FRAME_NAMES = { "BagnonFrameinventory", "BagnonInventoryFrame", "BagnonFrameInventory", "BagnonFrame1" }
+local BAGNON_CLEAR_BUTTON = "DragonUI_BagnonBagClearBtn"
+local BAGNON_HEADER_X = -58
+local BAGNON_HEADER_Y = -10
+
+-- Other bag addons' inventory windows. Their headers differ, so the button
+-- sits just above the window's top-right corner.
+local OTHER_BAG_FRAME_NAMES = {
+    "ARKINV_Frame1",        -- ArkInventory
+    "AdiBagsContainer1",    -- AdiBags
+    "OneBagFrame",          -- OneBag3
+    "CombuctorFrame1",      -- Combuctor
+    "ElvUI_ContainerFrame", -- ElvUI
+    "StuffingFrameBags",    -- Tukui
+}
+local OTHER_BAG_GAP = 2
+
+-- Bag addons replace these, so they are hooked at login, after every addon
+-- has loaded.
+local BAG_OPEN_FUNCTIONS = { "ToggleBackpack", "OpenBackpack", "OpenAllBags", "ToggleAllBags", "ToggleBag", "OpenBag" }
+-- How long after a bag opens to keep looking for its window.
+local BAG_BUTTON_RETRY_SECONDS = 0.5
 
 local function Trim(text)
     if not text then
@@ -5026,6 +5051,44 @@ local function GetOpenBackpackFrame()
     end
 end
 
+-- Bag addon windows are built on first open, so every window found is hooked
+-- for later opens.
+function RB:HookBagAddonFrame(frame)
+    if frame and not frame.ReagentBankUIHooked and frame.HookScript then
+        frame:HookScript("OnShow", function()
+            RB:QueueBagButtonPosition()
+        end)
+        frame.ReagentBankUIHooked = true
+    end
+end
+
+function RB:FindBagAddonFrame(names)
+    for _, name in ipairs(names) do
+        local frame = _G[name]
+        if type(frame) == "table" and frame.IsShown then
+            self:HookBagAddonFrame(frame)
+            if frame:IsShown() then
+                return frame
+            end
+        end
+    end
+end
+
+function RB:HookBagOpenFunctions()
+    if self.bagOpenFunctionsHooked then
+        return
+    end
+    self.bagOpenFunctionsHooked = true
+
+    for _, name in ipairs(BAG_OPEN_FUNCTIONS) do
+        if type(_G[name]) == "function" then
+            hooksecurefunc(name, function()
+                RB:QueueBagButtonPosition()
+            end)
+        end
+    end
+end
+
 -- DragonUI's combined bags use its Dragonflight action-button frame; the
 -- plain backpack keeps the stock quickslot border, like DragonUI's own row.
 function RB:SetBagButtonChrome(dragon)
@@ -5059,7 +5122,7 @@ function RB:PositionBagButton()
         return
     end
 
-    local host, anchor, gap, dragon
+    local host, anchor, gap, dragon, mode
     local bagster = _G[BAGSTER_FRAME_NAME]
 
     if bagster and bagster:IsShown() then
@@ -5067,6 +5130,7 @@ function RB:PositionBagButton()
         anchor = FirstShown(BAGSTER_HEADER_BUTTONS)
         gap = BAGSTER_HEADER_GAP
         dragon = true
+        mode = "header"
 
         -- DragonUI sizes the search box to a full header row, so it gives up
         -- our button's width once.
@@ -5080,20 +5144,49 @@ function RB:PositionBagButton()
         if host then
             anchor = FirstShown(VANILLA_HEADER_BUTTONS)
             gap = VANILLA_HEADER_GAP
+            mode = "stock"
             if anchor and anchor:GetParent() ~= host then
                 anchor = nil
             end
         end
     end
 
+    -- With DragonUI loaded its styling is used on other bag addons' windows too.
     if not host then
-        return
+        host = self:FindBagAddonFrame(BAGNON_FRAME_NAMES)
+        if host then
+            anchor = FirstShown({ BAGNON_CLEAR_BUTTON })
+            if anchor and anchor:GetParent() ~= host then
+                anchor = nil
+            end
+            gap = BAGSTER_HEADER_GAP
+            dragon = true
+            mode = "bagnon"
+        end
+    end
+
+    if not host then
+        host = self:FindBagAddonFrame(OTHER_BAG_FRAME_NAMES)
+        if host then
+            dragon = true
+            mode = "above"
+        end
+    end
+
+    -- Container frames are reused, so a bag opened where the backpack was must
+    -- not keep the button.
+    if not host then
+        button:Hide()
+        return false
     end
 
     if button:GetParent() ~= host then
         button:SetParent(host)
     end
-    button:SetFrameLevel((host:GetFrameLevel() or 1) + 10)
+    -- Bagnon's title bar keeps raising itself, so the button needs a higher
+    -- strata there.
+    button:SetFrameStrata(mode == "bagnon" and "HIGH" or host:GetFrameStrata())
+    button:SetFrameLevel((host:GetFrameLevel() or 1) + (mode == "bagnon" and 20 or 10))
 
     local size = anchor and math.floor(anchor:GetWidth() + 0.5) or BAG_BUTTON_SIZE
     button:SetWidth(size)
@@ -5103,6 +5196,10 @@ function RB:PositionBagButton()
     button:ClearAllPoints()
     if anchor then
         button:SetPoint("RIGHT", anchor, "LEFT", -gap, 0)
+    elseif mode == "bagnon" then
+        button:SetPoint("TOPRIGHT", host, "TOPRIGHT", BAGNON_HEADER_X, BAGNON_HEADER_Y)
+    elseif mode == "above" then
+        button:SetPoint("BOTTOMRIGHT", host, "TOPRIGHT", 0, OTHER_BAG_GAP)
     else
         -- Stock backpack: in the title bar, left of the close button.
         local close = _G[host:GetName() .. "CloseButton"]
@@ -5113,13 +5210,15 @@ function RB:PositionBagButton()
         end
     end
     button:Show()
+    return true
 end
 
--- DragonUI lays out its own header buttons when the window opens, so the
--- button is placed again on the next frame as well.
+-- DragonUI lays out its own header buttons when the window opens, and bag
+-- addons may show their window a little after the open call, so the button is
+-- placed again over the next few frames until a window is found.
 function RB:QueueBagButtonPosition()
     self:PositionBagButton()
-    self.bagButtonDriver.queued = true
+    self.bagButtonDriver.queued = BAG_BUTTON_RETRY_SECONDS
     self.bagButtonDriver:Show()
 end
 
@@ -5209,15 +5308,17 @@ function RB:CreateBagButton()
         end
     end
 
-    -- Runs only while shown: one deferred placement after a window opens, and
+    -- Runs only while shown: placement retries after a window opens, and
     -- until DragonUI has built its combined bag window (or 30 s have passed).
     local driver = CreateFrame("Frame")
     driver.elapsed = 0
     driver.waited = 0
     driver:SetScript("OnUpdate", function(selfDriver, elapsed)
         if selfDriver.queued then
-            selfDriver.queued = nil
-            RB:PositionBagButton()
+            selfDriver.queued = selfDriver.queued - elapsed
+            if RB:PositionBagButton() or selfDriver.queued <= 0 then
+                selfDriver.queued = nil
+            end
         end
 
         if not selfDriver.bagsterDone then
@@ -7377,6 +7478,7 @@ RB:SetScript("OnEvent", function(self, event, ...)
         self:NormalizeShoppingList()
         self:RestartAutoDepositTicker()
         self:CreateBagButton()
+        self:HookBagOpenFunctions()
         self:CreateSettingsPanel()
         self:FixAuctionatorShoppingListOptions()
     elseif event == "TRADE_SKILL_SHOW" then
