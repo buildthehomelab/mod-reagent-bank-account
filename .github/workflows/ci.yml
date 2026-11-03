@@ -21,3 +21,52 @@ jobs:
 #   with:
 #     module: mod-foo          # only if the server folder isn't the repo name minus "wow-"
 #     lua-exclude: "Astrolabe/**"
+
+  unit-tests:
+    name: Focused unit tests (${{ matrix.compiler }})
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        compiler: [g++, clang++]
+    steps:
+      - uses: actions/checkout@v5
+      - name: Execute selected production functions with fatal sanitizers
+        env:
+          CXX: ${{ matrix.compiler }}
+          CXXFLAGS: -fsanitize=address,undefined -fno-sanitize-recover=all -fno-omit-frame-pointer
+        run: python3 tests/run.py
+      - name: Reject compiled behavioral mutants
+        env:
+          CXX: ${{ matrix.compiler }}
+        run: python3 tests/mutations.py
+
+  selected-coverage:
+    name: Selected C++ function coverage (partial module)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+      - name: Instrument selected production functions
+        env:
+          CXX: g++
+          CXXFLAGS: --coverage -O0 -g
+          BUILD_DIR: ${{ runner.temp }}/reagent-coverage
+        run: python3 tests/run.py
+      - name: Enforce selected-function floor
+        run: |
+          pipx run --spec gcovr==8.4 gcovr \
+            --root . --filter 'src/' \
+            --exclude-throw-branches --exclude-unreachable-branches \
+            --fail-under-line 98 --fail-under-function 100 --fail-under-branch 90 \
+            --print-summary --json coverage.json \
+            "${{ runner.temp }}/reagent-coverage"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: selected-cpp-coverage-not-whole-module
+          path: |
+            coverage.json
+            ${{ runner.temp }}/reagent-coverage/selection.txt
+          if-no-files-found: warn
