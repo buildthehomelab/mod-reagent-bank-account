@@ -60,6 +60,13 @@
 #include "SpellMgr.h"
 #include "StringFormat.h"
 #include "WorldSession.h"
+
+// A core with home screens keeps a character row per account that nobody plays. Other cores have none.
+#if __has_include("HomeViewer.h")
+#include "HomeViewer.h"
+#else
+#define SQL_NOT_HOME_VIEWER "1"
+#endif
 #if __has_include("ChallengesApi.h")
 #include "ChallengesApi.h"
 #endif
@@ -725,7 +732,7 @@ namespace ReagentBank
     static std::string GetAccountDisplayName(uint32 accountId)
     {
         QueryResult result = CharacterDatabase.Query(
-            "SELECT name FROM characters WHERE account = {} ORDER BY guid ASC LIMIT 1",
+            "SELECT name FROM characters WHERE account = {} AND " SQL_NOT_HOME_VIEWER " ORDER BY guid ASC LIMIT 1",
             accountId);
 
         if (!result)
@@ -860,7 +867,7 @@ namespace ReagentBank
         uint64 const orphanRows = QueryUInt64(
             "SELECT COUNT(*) "
             "FROM `mod_reagent_bank_account` r "
-            "LEFT JOIN (SELECT `account`, MIN(`guid`) AS `owner_guid` FROM `characters` GROUP BY `account`) c "
+            "LEFT JOIN (SELECT `account`, MIN(`guid`) AS `owner_guid` FROM `characters` WHERE " SQL_NOT_HOME_VIEWER " GROUP BY `account`) c "
             "ON c.`account` = r.`account_id` "
             "WHERE r.`account_id` <> 0 AND r.`guid` = 0 AND c.`owner_guid` IS NULL");
 
@@ -872,7 +879,7 @@ namespace ReagentBank
             "INSERT INTO `mod_reagent_bank_account` (`account_id`, `guid`, `item_entry`, `item_subclass`, `amount`) "
             "SELECT 0, owner.`owner_guid`, r.`item_entry`, r.`item_subclass`, r.`amount` "
             "FROM `mod_reagent_bank_account` r "
-            "INNER JOIN (SELECT `account`, MIN(`guid`) AS `owner_guid` FROM `characters` GROUP BY `account`) owner "
+            "INNER JOIN (SELECT `account`, MIN(`guid`) AS `owner_guid` FROM `characters` WHERE " SQL_NOT_HOME_VIEWER " GROUP BY `account`) owner "
             "ON owner.`account` = r.`account_id` "
             "WHERE r.`account_id` <> 0 AND r.`guid` = 0 "
             "ON DUPLICATE KEY UPDATE "
@@ -882,7 +889,7 @@ namespace ReagentBank
         trans->Append(
             "DELETE FROM `mod_reagent_bank_account` "
             "WHERE `account_id` <> 0 AND `guid` = 0 "
-            "AND `account_id` IN (SELECT DISTINCT `account` FROM `characters`)");
+            "AND `account_id` IN (SELECT DISTINCT `account` FROM `characters` WHERE " SQL_NOT_HOME_VIEWER ")");
 
         CharacterDatabase.CommitTransaction(trans);
 
@@ -1975,7 +1982,7 @@ namespace ReagentBank
     static void NotifyOnlineAccountPlayers(uint32 targetAccountId, std::string const& protocolLine)
     {
         QueryResult result = CharacterDatabase.Query(
-            "SELECT guid FROM characters WHERE account = {}",
+            "SELECT guid FROM characters WHERE account = {} AND " SQL_NOT_HOME_VIEWER,
             targetAccountId);
 
         if (!result)
@@ -2065,7 +2072,7 @@ namespace ReagentBank
 
         // AccountWide=1: key is account_id; AccountWide=0: key is character guid
         QueryResult charResult = CharacterDatabase.Query(
-            "SELECT account, guid FROM characters WHERE name = '{}'", inviteeName);
+            "SELECT account, guid FROM characters WHERE name = '{}' AND " SQL_NOT_HOME_VIEWER, inviteeName);
 
         if (!charResult)
         {
@@ -2292,7 +2299,7 @@ namespace ReagentBank
 
         // AccountWide=1: key is account_id; AccountWide=0: key is character guid
         QueryResult charResult = CharacterDatabase.Query(
-            "SELECT account, guid FROM characters WHERE name = '{}'", memberName);
+            "SELECT account, guid FROM characters WHERE name = '{}' AND " SQL_NOT_HOME_VIEWER, memberName);
 
         if (!charResult)
         {
