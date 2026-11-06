@@ -34,7 +34,7 @@ This module adds a server-backed reagent bank for trade goods, gems, and craftin
 - Soulbound and quest-bound items stay in your bags, since the bank can be shared between characters, unless the inclusions table lists them (the archaeology keystones are soulbound). Conjured and timed items always stay in your bags
 - Archaeology keystones: the deposit inclusions list all seven mod-archaeology keystones under Other Trade Goods (apply the updated SQL and restart to reload inclusions). ArchaeologyUI has a Bank slot for exact-quantity withdrawals into bags through the existing server command
 
-Deposits skip any item a quest in your log asks for, so auto-deposit cannot take quest items before you turn them in. Deposits are refused while a trade window is open, and periodic auto-deposit waits until the trade is closed.
+Deposits skip any item a quest in your log asks for, so auto-deposit cannot take quest items before you turn them in. Deposits are refused while a trade window is open, and periodic auto-deposit waits until the trade is closed. Mages keep their Light Feathers for Slow Fall: Deposit All, category deposits and auto-deposit leave them in the bags, though a mage can still deposit them one item at a time.
 
 ---
 

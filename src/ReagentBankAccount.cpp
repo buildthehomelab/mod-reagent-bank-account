@@ -681,6 +681,14 @@ namespace ReagentBank
 
     // Banking an item an active quest asks for would undo the quest's progress, or leave
     // a completed quest unable to turn in. This matters most for the periodic auto-deposit.
+    // Mages cast Slow Fall with a Light Feather, so "deposit all" and category
+    // deposits leave them in the bags. Explicit item deposits still take them.
+    static bool IsKeptForClassSpell(Player const* player, uint32 itemEntry)
+    {
+        constexpr uint32 ITEM_LIGHT_FEATHER = 17056;
+        return itemEntry == ITEM_LIGHT_FEATHER && player->getClass() == CLASS_MAGE;
+    }
+
     static bool IsNeededByActiveQuest(Player const* player, uint32 itemEntry)
     {
         for (uint8 slot = 0; slot < MAX_QUEST_LOG_SIZE; ++slot)
@@ -1318,7 +1326,7 @@ namespace ReagentBank
         if (!IsStorableReagent(item->GetTemplate(), itemEntry, itemSubclass))
             return 0;
 
-        if (IsDepositExcluded(itemEntry) || IsNeededByActiveQuest(player, itemEntry))
+        if (IsDepositExcluded(itemEntry) || IsNeededByActiveQuest(player, itemEntry) || IsKeptForClassSpell(player, itemEntry))
             return 0;
 
         if (onlyCategory && itemSubclass != onlyCategory)
@@ -1422,7 +1430,7 @@ namespace ReagentBank
         if (!IsStorableReagent(item->GetTemplate(), itemEntry, itemSubclass))
             return 0;
 
-        if (IsDepositExcluded(itemEntry) || IsNeededByActiveQuest(player, itemEntry))
+        if (IsDepositExcluded(itemEntry) || IsNeededByActiveQuest(player, itemEntry) || IsKeptForClassSpell(player, itemEntry))
             return 0;
 
         if (onlyCategory && itemSubclass != onlyCategory)
